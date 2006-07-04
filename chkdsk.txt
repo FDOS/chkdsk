@@ -3,6 +3,10 @@
 Version
 -------
 
+Chkdsk version beta 0.9, candidate for version 1.  Now has status indicator in
+surface scan mode and does not stop the checking when a suspicious media
+descriptor is found. 
+
 This is the documentation for chkdsk version 0.31. This version is a candidate
 for version 1 and includes most of the planned features like:
 
