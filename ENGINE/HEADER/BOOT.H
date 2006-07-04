@@ -96,7 +96,7 @@ BOOL WriteBootSector(RDWRHandle handle, struct BootSectorStruct* buffer);
 unsigned short GetNumberOfRootEntries(RDWRHandle handle); 
 
 /* Return the right fields looking at what type of FAT is realy used. */
-unsigned long  GetSectorsPerCluster(RDWRHandle handle);
+unsigned char  GetSectorsPerCluster(RDWRHandle handle);
 unsigned short GetReservedSectors(RDWRHandle handle);
 unsigned char  GetNumberOfFats(RDWRHandle handle);
 unsigned char  GetMediaDescriptor(RDWRHandle handle);
@@ -182,3 +182,4 @@ void WriteFAT32BackupBootSector(struct BootSectorStruct* boot, unsigned short ba
          (((unsigned char*)bootsect)[511] == 0xAA))                     
                                         
 #endif
+

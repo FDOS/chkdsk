@@ -165,7 +165,7 @@ void InvalidateBootInfo(RDWRHandle handle)
 ** Returns the number of sectors per cluster.
 *************************************************************/
 
-unsigned long GetSectorsPerCluster(RDWRHandle handle)
+unsigned char GetSectorsPerCluster(RDWRHandle handle)
 {
     if (ReadBootSectorIfNeeded(handle))
        return handle->SectorsPerCluster;
@@ -967,5 +967,6 @@ void WriteFAT32BackupBootSector(struct BootSectorStruct* boot,
 {
      boot->fs.spc32.BackupBoot = backupsect;
 }
+
 
 

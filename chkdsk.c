@@ -148,6 +148,7 @@ int main(int argc, char *argv[])
                       
                       printf("%s reserved for future use!", argv[i]);
                       return 2;
+                      //break;
                       
                  default:
                       printf("Unknown option %s used!", argv[i]);   
@@ -306,12 +307,13 @@ int main(int argc, char *argv[])
     }
 
     /* Check the BOOT */
-    if (!DescriptorCheck(handle))
-    {
-       printf("Invalid BOOT sector\n");
-       DestroyFastTreeMap();
-       CloseReadWriteSectors(&handle);
-       return 2;
+   if (!DescriptorCheck(handle))
+   {
+       printf("Suspicious descriptor in boot\n");
+	   
+  //     DestroyFastTreeMap();
+  //     CloseReadWriteSectors(&handle);
+  //     return 2;
     }
 
     /* See wether there are any differences in the FATs or the BOOTs

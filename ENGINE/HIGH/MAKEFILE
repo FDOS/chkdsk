@@ -119,7 +119,6 @@ clean:
         @-del TracePth.obj
         @-del ClcFSize.obj
         @-del FreeSpac.obj
-        @-del WalkWPth.obj
         @-del high.lib
         @-del high.bak
         @-del *.bak

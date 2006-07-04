@@ -316,7 +316,7 @@ BOOL LinearTraverseFat(RDWRHandle handle,
     iterations = sectorsperfat / SECTORSPERREADBUF;
     rest       = sectorsperfat % SECTORSPERREADBUF;
 
-    /* toreadsectors = SECTORSPERREADBUF; */
+    //toreadsectors = SECTORSPERREADBUF;
     toreadlabels  = labelsinbuf = FATREADBUFSIZE * 8 / GetFatLabelSize(handle);
         
     buffer = (char*) AllocateSectors(handle, SECTORSPERREADBUF);

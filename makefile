@@ -7,7 +7,6 @@
 includepath = misc;engine\header
 
 ..\bin\chkdsk.exe: chkdsk.exe 
-        @copy chkdsk.exe ..\bin
         @copy chkdsk.exe ..\..\bin
 
 chkdsk.exe: chkdsk.obj chkdrvr.obj chkargs.obj engine\lib\fte.lib fat\chkfat.lib \
@@ -122,8 +121,5 @@ clean:
         @make clean
         @cd ..
         @cd errmsgs
-        @make clean
-        @cd ..
-        @cd misc
         @make clean
         @cd ..

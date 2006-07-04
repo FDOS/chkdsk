@@ -28,7 +28,7 @@
 #include "backmem.h"
 #include "suremem.h"
 
-/*#define DEBUG_FTEMEM */
+//#define DEBUG_FTEMEM
 #ifdef DEBUG_FTEMEM
  long FTEMEM_Debug_Counter=0;
 #endif

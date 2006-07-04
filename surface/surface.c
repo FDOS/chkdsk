@@ -48,9 +48,14 @@ BOOL ScanSurface(RDWRHandle handle)
    char buffer1[BYTESPERSECTOR], buffer2[BYTESPERSECTOR];
    char *realbuf1, *realbuf2;
    int sectorsperreadbuf = 1;
+   unsigned long prevIndication=0;
+   int ii;
+   unsigned long indication; 
 
-   printf("Scanning, please wait . . .");
-   
+   printf("Scanning, please wait . . .\n");
+   printf("\n|------------------------------------------------------------------------------|");
+   printf(" ");
+    
    datastart = GetDataAreaStart(handle);
    if (!datastart) return FALSE;
 
@@ -87,6 +92,14 @@ BOOL ScanSurface(RDWRHandle handle)
    
    for (i = datastart; i < sectorsindataarea+datastart; i+=sectorsperreadbuf)
    {
+	indication = (i-datastart) * 78 / sectorsindataarea;	 
+	   
+        for (ii = 0; ii < indication - prevIndication; ii++)
+	{
+	   printf("o");
+	}
+	prevIndication = indication;
+
        prevcluster = 0;  
        start = i;
        for (j = 0; (j < sectorsperreadbuf) && (i+j < sectorsindataarea+datastart); j++)
@@ -134,7 +147,13 @@ BOOL ScanSurface(RDWRHandle handle)
           return FALSE;                 
        }           
    }  
-       
+   
+   for (ii = 0; ii < 78 - prevIndication; ii++)
+   {
+       printf("o");
+   }
+   printf("\n");
+   
    if (realbuf1 != buffer1) free(realbuf1);
    if (realbuf1 != buffer1) free(realbuf2);       
        

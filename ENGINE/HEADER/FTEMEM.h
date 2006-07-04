@@ -1,8 +1,6 @@
 #ifndef FTE_MEMORY_H_
 #define FTE_MEMORY_H_
 
-#include <alloc.h>
-
 #define PRE_FTE_ALLOC  1
 #define POST_FTE_ALLOC 2
 

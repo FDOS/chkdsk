@@ -74,9 +74,9 @@ clean:
         @cd ..\cache
         @make clean
         @cd ..\lib
-        @cd ..\disklib
-        @make clean
-        @cd ..\lib
+   @cd ..\disklib
+   @make clean
+   @cd ..\lib
         @cd ..\heapmem
         @make clean
         @cd ..\lib

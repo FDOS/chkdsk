@@ -82,7 +82,5 @@ clean:
    @-del FSinfo.obj
    @-del lowfat32.obj
    @-del backup.obj
-   @-del lfn.obj
    @-del low.lib
-   @-del volume.obj
    @-del *.bak
