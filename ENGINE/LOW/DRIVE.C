@@ -24,12 +24,13 @@
 
 */
 
+#include <assert.h>
 #include <string.h>
 #include <ctype.h>
 #include <dos.h>
 
-#include "..\..\misc\bool.h"
-#include "..\header\drive.h"
+#include "../../misc/bool.h"
+#include "../header/drive.h"
 
 /**************************************************************
 **                    HasAllFloppyForm
@@ -40,6 +41,8 @@
 int HasAllFloppyForm (char* drive)
 {
   int drv;
+    
+  assert(drive);
 
   if (strlen(drive) != 2)
      return FALSE;

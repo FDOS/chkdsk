@@ -48,15 +48,18 @@ struct RDWRHandleStruct
                                          clusters have changed, max 8Kb. */
 
    /* Function to read from drive or image file. */
-   int (*ReadFunc)  (int handle, int nsects, SECTOR lsects, void* buffer);
+   int (*ReadFunc)  (int handle, int nsects, SECTOR lsect, void* buffer);
    
    /* Function to write to drive or image file. */
-   int (*WriteFunc) (int handle, int nsects, SECTOR lsects, void* buffer,
+   int (*WriteFunc) (int handle, int nsects, SECTOR lsect, void* buffer,
                      unsigned area);
 
-#ifdef USE_SECTOR_CACHE   
    unsigned UniqueNumber;             /* Unique number used for caching    */
-#endif
+    
+   /* VFS: maximum size we can relocate */
+   int hasMaxRelocSize;
+   unsigned long MaxRelocSize;
+
 }; 
 typedef struct RDWRHandleStruct* RDWRHandle;
 

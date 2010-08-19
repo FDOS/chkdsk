@@ -22,9 +22,11 @@
    email me at:  imre.leber@worldonline.be
 */
 
+#include <assert.h>
 #include <string.h>
+#include <ctype.h>
 
-#include "fte.h"
+//#include "fte.h"
 
 /**************************************************************
 **                   ConvertUserPath
@@ -37,57 +39,59 @@
 void ConvertUserPath(char* path, char* filename, char* extension)
 {
      int extlen, filelen;
-     char *dot, *delim1, *delim2, *p, *q;
+     char *dot, *delim, *delim2;
+     size_t i;
+    
+     assert(path && filename && extension);
 
-     dot = strchr(path, '.');
+     dot = strchr(path, '.');       /* If the filename starts with . */
      if (dot == path) return;
      
-     delim1 = strchr(path, '/');
-     delim2 = strchr(path, '\\');
+     delim2 = strchr(path, '/');    /* The part BEFORE the first / or \ */
+     delim  = strchr(path, '\\');
 
-     if ((delim1 < dot) || (delim2 < dot))
-        dot = 0;
+     if (!delim || (delim2 && (delim > delim2)))     /* Adjust to make delim1 point to the first / or \ */
+        delim = delim2;     
+     
+     if (delim && (delim < dot)) dot = 0;      /* Only the extension of the part before / or \ */
 
-     if (delim1 > delim2)
-        delim1 = delim2;
 
-     if ((dot) && (!delim1 || (dot < delim1)))
+     if (dot)                       /* If there is an extension */
      {
         /* filename */
-        filelen = (int)(dot - path - 1);
+        filelen = (int)(dot - path);
         memcpy(filename, path, filelen);
         memset(filename+filelen, ' ', 8 - filelen);
 
         /* extension */
-        extlen = strlen(dot+1);
-        p = strchr(dot+1, '\\');
-        q = strchr(dot+1, '/');
-
-        if (q && ((p > q) || (!p))) p = q;
-        if (p) extlen = (int) (p - (dot+1));
+        if (delim) 
+	    extlen = (int) (delim - (dot+1));
+	else
+            extlen = strlen(dot+1);	    
 
         memcpy(extension, dot+1, extlen);
-        memset(extension+extlen, ' ', 3 - extlen);
+        memset(extension+extlen, ' ', 3 - extlen); /* Pad with spaces */
      }
      else
      {
         /* filename */
-        filelen = strlen(path);
-        p = strchr(path, '\\');
-        q = strchr(path, '/');
-
-        if (q && ((p > q) || (!p))) p = q;
-        if (p) filelen = (int) (p - path);
+        if (delim) 
+	   filelen = (int) (delim - path);
+	else
+	   filelen = strlen(path);
         
         memcpy(filename, path, filelen);
-        memset(filename+filelen, ' ', 8 - filelen);
+        memset(filename+filelen, ' ', 8 - filelen); /* Pad with spaces */
 
         /* no extension */
         memset(extension, ' ', 3);
      }
+	 
+     for (i = 0; i < strlen(filename); i++)
+	 filename[i] = toupper(filename[i]);
 
-     strupr(filename);
-     strupr(extension);
+     for (i = 0; i < strlen(extension); i++)
+         extension[i] = toupper(extension[i]);
 }
 
 /**************************************************************
@@ -102,6 +106,8 @@ void ConvertEntryPath(char* path, char* filename, char* extension)
 {
      char* p;
 
+     assert(path && filename && extension);
+    
      /* Copy the filename */
      memcpy(path, filename, 8);
      p = path+7;
@@ -118,3 +124,34 @@ void ConvertEntryPath(char* path, char* filename, char* extension)
      }
      *(p+1) = '\0';
 }
+
+#ifdef DEBUG
+
+int main(int argc, char** argv)
+{
+    int i;
+    char filename[8], extension[3], path[255];
+    
+    
+    for (i=1; i<argc; i++)
+    {
+        ConvertUserPath(argv[i], filename, extension);
+	
+	printf("ENTRY: ");
+	for (i=0; i<8; i++)
+	    printf("%c", filename[i]);
+	printf(".");
+	for (i=0; i<3; i++)
+	    printf("%c", extension[i]);
+	printf("\n");
+	
+	
+	ConvertEntryPath(path, filename, extension);
+	printf("USER: %s", path);
+    }    
+}
+
+
+
+
+#endif

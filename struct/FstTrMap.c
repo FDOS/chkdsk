@@ -175,6 +175,12 @@ static void ConvertTreeMaps(RDWRHandle handle, char* fatmap,
    }
 
    /* Now allocate the necessary space */
+   if (!*newlen)
+   {
+	   *result = 0;
+	   return;
+   }
+
    *result = (char*)CreateBitField(*newlen);
    if (!*result) return;
    

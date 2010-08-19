@@ -20,20 +20,21 @@
    email me at:  imre.leber@worldonline.be
 */
 
-
+#include <assert.h>
 #include <string.h>
 #include <stdlib.h>
 
-#include "..\..\misc\bool.h"
-#include "..\header\rdwrsect.h"
-#include "..\header\direct.h"
-#include "..\header\boot.h"
-#include "..\header\fat.h"
-#include "..\header\subdir.h"
-#include "..\header\fatconst.h"
-#include "..\header\FSInfo.h"
-#include "..\header\FTEMem.h"
-#include "..\header\Traversl.h"
+#include "../../misc/bool.h"
+#include "../header/rdwrsect.h"
+#include "../header/direct.h"
+#include "../header/boot.h"
+#include "../header/fat.h"
+#include "../header/subdir.h"
+#include "../header/fatconst.h"
+#include "../header/fsinfo.h"
+#include "../header/ftemem.h"
+#include "../header/traversl.h"
+#include "../header/fteerr.h"
 
 struct PipeStruct
 {
@@ -59,7 +60,7 @@ struct PipeStruct
     dirpos.sector = (SECTOR) datasector;
 
     sectorspercluster = GetSectorsPerCluster(handle);
-    if (!sectorspercluster) return FAIL;
+    if (!sectorspercluster) RETURN_FTEERR(FAIL);
 
     for (j = 0; j < sectorspercluster; j++)
     {
@@ -73,7 +74,7 @@ struct PipeStruct
 
                if (!GetDirectory(handle, &dirpos, &direct))
 	       {
-		  return FAIL;
+		  RETURN_FTEERR(FAIL);
 	       }
 
 	       if (direct.filename[0] == LASTLABEL)
@@ -85,7 +86,7 @@ struct PipeStruct
 	    switch ((*pipe)->func(handle, &dirpos, (*pipe)->buffer))
 	    {
 	       case FAIL:
-		    return FAIL;
+		    RETURN_FTEERR(FAIL);
 	       case FALSE:
 		    return FALSE;
 	    }
@@ -98,7 +99,7 @@ struct PipeStruct
 }
 
 /*
-   This traversal is in this file and not in directory.c, because
+   This traversal is in this file and not in direct.c, because
    it also has to work for FAT32. If the volume contains FAT32
    this function just calls TraverseSubDir with the cluster of the
    root directory as indicated by the BPB.
@@ -116,22 +117,26 @@ int TraverseRootDir(RDWRHandle handle,
 
      int fatlabelsize = GetFatLabelSize(handle);
      
+     assert(func);
+     
      if (fatlabelsize == FAT32)
      {
 	CLUSTER RootCluster = GetFAT32RootCluster(handle);
-	if (RootCluster == 0) return FALSE;
+	if (RootCluster == 0) RETURN_FTEERR(FALSE)
 
 	return TraverseSubdir(handle, RootCluster, func, buffer, exact);
      }
 
      if ((fatlabelsize != FAT12) && (fatlabelsize != FAT16))
-        return FALSE;
+         RETURN_FTEERR(FALSE)
 	       
      entries = GetNumberOfRootEntries(handle);
-     if (entries == 0) return FALSE;
+     if (entries == 0)  RETURN_FTEERR(FALSE);
 
-     if (GetRootDirPosition(handle, 0, &dirpos) == FALSE) return FALSE;
+     if (GetRootDirPosition(handle, 0, &dirpos) == FALSE) RETURN_FTEERR(FALSE)
 
+     assert(dirpos.sector && dirpos.offset < 16);
+     
      for (i = 0; i < entries; i++, j++)
      {
 	 if (j == 16)
@@ -146,12 +151,12 @@ int TraverseRootDir(RDWRHandle handle,
 	    struct DirectoryEntry*   direct; 
            
             direct = AllocateDirectoryEntry();
-            if (!direct) return FALSE;
+            if (!direct) RETURN_FTEERR(FALSE);
 	                
             if (!GetDirectory(handle, &dirpos, direct))
             {
                FreeDirectoryEntry(direct);
-               return FALSE;
+               RETURN_FTEERR(FALSE)
             }
             
 	    if (direct->filename[0] == LASTLABEL)
@@ -167,7 +172,7 @@ int TraverseRootDir(RDWRHandle handle,
 	    case FALSE:
 		 return TRUE;
 	    case FAIL:
-		 return FALSE;
+		 RETURN_FTEERR(FALSE);
 	 }
      }
 
@@ -179,13 +184,17 @@ int TraverseSubdir(RDWRHandle handle, CLUSTER fatcluster,
 				struct DirectoryPosition* pos,
 				void** buffer),
 		   void** buffer, int exact)
-{
+		{
     int                 result;
     struct PipeStruct*  pipe;
     struct PipeStruct  myPipe;
 
     if (fatcluster == 0)
-       return TraverseRootDir(handle, func, buffer, exact);
+    {
+       int retVal;
+       retVal = TraverseRootDir(handle, func, buffer, exact);
+       RETURN_FTEERR(retVal);
+    }
 
     pipe = &myPipe;
 
@@ -196,24 +205,54 @@ int TraverseSubdir(RDWRHandle handle, CLUSTER fatcluster,
     result = FileTraverseFat(handle, fatcluster, SubdirTraverser,
 			     (void**) &pipe);
 
-    return result;
+    RETURN_FTEERR(result);
 }
+
+#ifdef __BORLANDC__ /* 16 bit FreeDOS */
 
 int GetDirectory(RDWRHandle handle,
 		 struct DirectoryPosition* position,
 		 struct DirectoryEntry* direct)
 {
     char *sectbuf;
-	
+
+    assert((position->sector) && (position->offset < 16) && direct);
+    
     sectbuf = ReadSectorsAddress(handle, position->sector);	
     if (sectbuf == NULL)
-       return FALSE;
+        RETURN_FTEERR(FALSE);
 		
     memcpy(direct, &sectbuf[DIRLEN2BYTES(position->offset)],
 	   sizeof(struct DirectoryEntry));
         
     return TRUE;
 }
+
+#else /* linux */
+
+int GetDirectory(RDWRHandle handle,
+		 struct DirectoryPosition* position,
+		 struct DirectoryEntry* direct)
+{
+    char buffer[BYTESPERSECTOR];
+    
+    
+    assert(position->sector);
+    assert(position->offset < 16);
+    assert(direct);
+	
+    if (ReadSectors(handle, 1, position->sector, buffer) == -1)
+    {
+       RETURN_FTEERR(FALSE);
+    }
+
+    memcpy(direct, &buffer[DIRLEN2BYTES(position->offset)],
+		   sizeof(struct DirectoryEntry));
+        
+    return TRUE;
+}
+
+#endif
 
 int DirectoryEquals(struct DirectoryPosition* pos1,
 		    struct DirectoryPosition* pos2)
@@ -226,13 +265,15 @@ int WriteDirectory(RDWRHandle handle, struct DirectoryPosition* pos,
 {
     char* buffer;
     
+    assert(pos->sector && (pos->offset < 16) && direct);
+    
     buffer = (char*)AllocateSector(handle);
     if (!buffer) return FALSE;
 
     if (ReadSectors(handle, 1, pos->sector, buffer) == -1)
     {
 	FreeSectors((SECTOR*) buffer);
-        return FALSE;
+        RETURN_FTEERR(FALSE);
     }
 
     memcpy(&buffer[pos->offset << 5], direct,
@@ -241,7 +282,7 @@ int WriteDirectory(RDWRHandle handle, struct DirectoryPosition* pos,
     if (WriteSectors(handle, 1, pos->sector, buffer, WR_DIRECT) == -1)
     {
 	FreeSectors((SECTOR*) buffer);
-        return FALSE;
+        RETURN_FTEERR(FALSE);
     }
 
     FreeSectors((SECTOR*) buffer);

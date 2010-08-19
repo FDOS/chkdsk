@@ -20,18 +20,20 @@
    email me at:  imre.leber@worldonline.be
 */
 
+#include <assert.h>
 #include <string.h>
 
-#include "..\..\misc\bool.h"
-#include "..\header\fat.h"
-#include "..\header\rdwrsect.h"
-#include "..\header\direct.h"
-#include "..\header\boot.h"
-#include "..\header\fatconst.h"
-#include "..\header\FSInfo.h"
-#include "..\header\subdir.h"
-#include "..\header\FTEMem.h"
-#include "..\header\Traversl.h"
+#include "../../misc/bool.h"
+#include "../header/fat.h"
+#include "../header/rdwrsect.h"
+#include "../header/direct.h"
+#include "../header/boot.h"
+#include "../header/fatconst.h"
+#include "../header/fsinfo.h"
+#include "../header/subdir.h"
+#include "../header/ftemem.h"
+#include "../header/traversl.h"
+#include "../header/fteerr.h"
 
 struct Pipe
 {
@@ -63,13 +65,16 @@ BOOL GetRootDirVolumeLabel(RDWRHandle handle,
                            struct DirectoryPosition* volumepos)
 {
    struct Pipe pipe, *ppipe = &pipe;
+       
+   assert(volumepos);
 
    pipe.found = FALSE;
    pipe.pos   = volumepos;
 
    if (!TraverseRootDir(handle, VolumeGetter, (void**) &ppipe, TRUE))
-      return FAIL;
-
+      RETURN_FTEERR(FAIL);
+   
+   assert(!pipe.found || (volumepos->sector && volumepos->offset < 16));
    return pipe.found;
 }
 
@@ -80,16 +85,24 @@ static BOOL VolumeGetter(RDWRHandle handle,
    struct Pipe *pipe = *((struct Pipe**) structure);
    struct DirectoryEntry* entry;
 
+   assert (pos->sector && (pos->offset < 16));
+   
    entry = AllocateDirectoryEntry();
-   if (!entry) return FAIL;
+   if (!entry) RETURN_FTEERR(FAIL);
 
    if (!GetDirectory(handle, pos, entry))
    {
       FreeDirectoryEntry(entry);
-      return FAIL;
+      RETURN_FTEERR(FAIL);
    }
 
    if (IsLFNEntry(entry))
+   {
+      FreeDirectoryEntry(entry);
+      return TRUE;
+   }
+   
+   if (IsDeletedLabel(*entry))
    {
       FreeDirectoryEntry(entry);
       return TRUE;
@@ -101,7 +114,7 @@ static BOOL VolumeGetter(RDWRHandle handle,
       memcpy(pipe->pos, pos, sizeof(struct DirectoryPosition));
 
       FreeDirectoryEntry(entry);
-      return FALSE;
+       RETURN_FTEERR(FALSE);
    }
 
    FreeDirectoryEntry(entry);

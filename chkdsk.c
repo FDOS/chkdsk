@@ -59,7 +59,7 @@ int main(int argc, char *argv[])
 
     /* Show copyright message */
     printf("ChkDsk " VERSION "\n"
-	   "Copyright 2002, 2003 Imre Leber under the GNU GPL\n\n");
+	   "Copyright 2002, 2003, 2009 Imre Leber under the GNU GPL\n\n");
 
     /* First check the parameters. */
     if ((argc == 2) &&

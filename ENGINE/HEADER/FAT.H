@@ -1,7 +1,7 @@
 #ifndef FAT_H_
 #define FAT_H_
 
-#include "..\..\engine\header\rdwrsect.h"
+#include "../../engine/header/rdwrsect.h"
 
 #define FAT12 12
 #define FAT16 16
@@ -94,5 +94,6 @@ SECTOR  ConvertToDataSector(RDWRHandle handle, CLUSTER fatcluster);
 void InvalidateFatCache(RDWRHandle handle);
 
 BOOL IsLabelValid(RDWRHandle handle, CLUSTER label);
+BOOL IsLabelValidInFile(RDWRHandle handle, CLUSTER label);
 
 #endif

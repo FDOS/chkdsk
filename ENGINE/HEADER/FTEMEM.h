@@ -1,6 +1,12 @@
 #ifndef FTE_MEMORY_H_
 #define FTE_MEMORY_H_
 
+#ifndef __GNUC__
+#ifndef _WIN32
+#include <alloc.h>
+#endif
+#endif
+
 #define PRE_FTE_ALLOC  1
 #define POST_FTE_ALLOC 2
 

@@ -21,14 +21,15 @@
    email me at:  imre.leber@worldonline.be
 */
 
+#include <assert.h>
 #include <stdlib.h>
 
-#include "FTE.h"
-#include "FTEMEM.h"
+#include "fte.h"
+#include "ftemem.h"
 #include "backmem.h"
 #include "suremem.h"
 
-//#define DEBUG_FTEMEM
+/*#define DEBUG_FTEMEM */
 #ifdef DEBUG_FTEMEM
  long FTEMEM_Debug_Counter=0;
 #endif
@@ -42,7 +43,7 @@ ALLOCRES AllocateFTEMemory(unsigned guaranteed, unsigned char guaranteedblocks,
    {
       if (!AllocateGuaranteedMemory(guaranteed, guaranteedblocks))
       {
-         return TOTAL_FAIL;
+         RETURN_FTEERROR(TOTAL_FAIL);	
       }
    }
 
@@ -50,7 +51,7 @@ ALLOCRES AllocateFTEMemory(unsigned guaranteed, unsigned char guaranteedblocks,
    {
       if (!AllocateBackupMemory(backupbytes))
       {
-         return BACKUP_FAIL;
+         RETURN_FTEERROR(BACKUP_FAIL);	
       }
    }
 
@@ -77,15 +78,7 @@ void* FTEAlloc(size_t bytes)
 
    retval = malloc(bytes);
 #ifdef MANAGE_OWN_MEMORY
-   if (!retval)
-   {
-      retval = BackupAlloc(bytes);
-      if (retval)
-      {
-         return retval;
-      }
-      SetFTEerror(FTE_MEM_INSUFFICIENT);
-   }
+   if (!retval) retval = BackupAlloc(bytes);
 #endif
 
 #ifdef DEBUG_FTEMEM
@@ -93,11 +86,19 @@ void* FTEAlloc(size_t bytes)
    printf("Allocated at: %lu\n", (unsigned long) retval);
 #endif
 
+   if (!retval)
+   {
+      SetFTEerror(FTE_MEM_INSUFFICIENT);
+      RETURN_FTEERROR(NULL);
+   }
+      
    return retval;
 }
 
 void  FTEFree(void* tofree)
 {
+   assert(tofree);
+    
 #ifdef DEBUG_FTEMEM
    gotoxy(40,3);
    printf("Free: %ld\n", --FTEMEM_Debug_Counter);
@@ -112,9 +113,8 @@ void  FTEFree(void* tofree)
    }
    else
 
-#endif
+#endif   
       free(tofree);
-
 }
 
 /* Sectors -- Assumes that bytespersector field is filled in at handle

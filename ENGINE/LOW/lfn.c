@@ -20,15 +20,19 @@
    email me at:  imre.leber@worldonline.be
 */
 
-#include "..\..\misc\bool.h"
-#include "..\header\rdwrsect.h"
-#include "..\header\direct.h"
+#include <assert.h>
+
+#include "../../misc/bool.h"
+#include "../header/rdwrsect.h"
+#include "../header/direct.h"
 
 unsigned char CalculateSFNCheckSum(struct DirectoryEntry* entry)
 {
    short i;
    unsigned char result = 0;
 
+   assert(entry);
+    
    for (i = 0; i < 8; i++)
        result = ((result & 1) ? 0x80 : 0) + (result >> 1) +
                  entry->filename[i];

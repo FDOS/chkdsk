@@ -50,7 +50,7 @@ WrtBack.obj: wrtback.c
         
 clean:
         @-del sctcache.obj
-        @-del pshcache.obj
+        @-del phscache.obj
         @-del logcache.obj
         @-del blkcache.obj
         @-del wrtback.obj

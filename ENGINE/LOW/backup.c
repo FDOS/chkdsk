@@ -6,11 +6,12 @@
 #include "fat.h"
 #include "fatconst.h"
 #include "direct.h"
-#include "FSInfo.h"
+#include "fsinfo.h"
 #include "ftemem.h"
 #include "backup.h"
-#include "Traversl.h"
+#include "traversl.h"
 #include "dtstrct.h"
+#include "fteerr.h"
 
 /************************************************************
 **                        BackupBoot                       **
@@ -27,34 +28,30 @@ BOOL BackupBoot(RDWRHandle handle)
    int fatlabelsize = GetFatLabelSize(handle);
    SECTOR BackupSector;
    struct BootSectorStruct* boot;
- 
+   BOOL retVal = TRUE;
+  
    if (fatlabelsize == FAT32)
    {
-      boot = AllocateBootSector();
-      if (!boot) return FALSE;
-   
-      if (!ReadBootSector(handle, boot) == -1)
-      {
-         FreeBootSector(boot);
-         return FALSE;
-      }
-      
       BackupSector = GetFAT32BackupBootSector(handle);
       if (!BackupSector)
       {
-         FreeBootSector(boot);
-         return FALSE;
-      }
-               
-      if (WriteSectors(handle, 1, BackupSector, (void*) boot, WR_UNKNOWN)
-                                                                     == -1) 
-      {
-          FreeBootSector(boot);
-          return FALSE;
-      }    
-   }     
+         RETURN_FTEERR(FALSE);
+      }       
+              
+      boot = AllocateBootSector();
+      if (!boot) RETURN_FTEERR(FALSE);
    
-   return TRUE;
+      if (!ReadBootSector(handle, boot) ||
+	  (WriteSectors(handle, 1, BackupSector, (void*) boot, WR_UNKNOWN)
+                                                                     == -1))
+      {
+	  RETURN_FTEERR(FALSE);
+      }    
+      
+      FreeBootSector(boot);
+   }     
+
+   RETURN_FTEERR(retVal);   
 }
 
 /************************************************************
@@ -72,38 +69,36 @@ BOOL MultipleBootCheck(RDWRHandle handle)
    int fatlabelsize = GetFatLabelSize(handle);
    SECTOR BackupSector;
    struct BootSectorStruct* boot1, *boot2;
-
+   
    if (fatlabelsize == FAT32)
    {
+      BackupSector = GetFAT32BackupBootSector(handle);
+      if (!BackupSector)
+      {
+         RETURN_FTEERR(FAIL);
+      }       
+       
       boot1 = AllocateBootSector();
-      if (!boot1) return FAIL;
+      if (!boot1) RETURN_FTEERR(FAIL);
    
       boot2 = AllocateBootSector();
       if (!boot2)
       {         
          FreeBootSector(boot1);
-         return FAIL;
+         RETURN_FTEERR(FAIL);
       }
 
       if (!ReadBootSector(handle, boot1) == -1)
       {
          FreeBootSector(boot1);
-         return FAIL;
-      }
-      
-      BackupSector = GetFAT32BackupBootSector(handle);
-      if (!BackupSector)
-      {
-         FreeBootSector(boot1);
-         FreeBootSector(boot2);
-         return FAIL;
-      }
+	 RETURN_FTEERR(FAIL);
+      }      
                
       if (!ReadSectors(handle, 1, BackupSector, (void*) boot2) == -1) 
       {
          FreeBootSector(boot1);
          FreeBootSector(boot2);
-         return FAIL;
+         RETURN_FTEERR(FAIL);
       }    
       
       retval = (memcmp(boot1, boot2, BYTESPERSECTOR) == 0);
@@ -112,16 +107,16 @@ BOOL MultipleBootCheck(RDWRHandle handle)
       FreeBootSector(boot2);
       
       return retval;
-   }     
+   }        
 
-   return (fatlabelsize) ? TRUE : FAIL;    
+   RETURN_FTEERR((fatlabelsize) ? TRUE : FAIL);    
 }
 
 /************************************************************
 **                      HasSectorChanged                   **
 *************************************************************
 ** This function returns a certain sector has changed.     **
-** If we don't know say that it has failed.                **
+** If we don't know say that it has changed.               **
 *************************************************************/
 
 static BOOL HasSectorChanged(RDWRHandle handle, SECTOR sector,
@@ -162,25 +157,25 @@ static BOOL PrivateBackupFat(RDWRHandle handle, BOOL all)
     unsigned long bytesinfat;
 
     bytesinfat = GetBytesInFat(handle);
-    if (!bytesinfat) return FALSE;
+    if (!bytesinfat) RETURN_FTEERR(FALSE);
 
     fatstart = GetFatStart(handle);
-    if (!fatstart) return FALSE;
+    if (!fatstart) RETURN_FTEERR(FALSE);
     
     NumberOfFats = GetNumberOfFats(handle);
-    if (!NumberOfFats) return FALSE;
+    if (!NumberOfFats) RETURN_FTEERR(FALSE);
     
     SectorsPerFat = GetSectorsPerFat(handle);
-    if (!SectorsPerFat) return FALSE;
+    if (!SectorsPerFat) RETURN_FTEERR(FALSE);
 
     sectbuf  = (char*) FTEAlloc(BYTESPERSECTOR);
-    if (!sectbuf) return FALSE;
+    if (!sectbuf) RETURN_FTEERR(FALSE);
 
     sectbuf1 = (char*) FTEAlloc(BYTESPERSECTOR);
     if (!sectbuf1)
     {
        FTEFree(sectbuf);
-       return FALSE;
+       RETURN_FTEERR(FALSE);
     }
         
     for (i = 1; i < NumberOfFats; i++)
@@ -196,14 +191,14 @@ static BOOL PrivateBackupFat(RDWRHandle handle, BOOL all)
                   {
                      FTEFree(sectbuf);
                      FTEFree(sectbuf1);
-                     return FALSE;
+		     RETURN_FTEERR(FALSE);
                   }
                }
                else
                {
                   FTEFree(sectbuf);
                   FTEFree(sectbuf1);
-                  return FALSE;
+		  RETURN_FTEERR(FALSE); 
                }
             }
         }
@@ -217,7 +212,7 @@ static BOOL PrivateBackupFat(RDWRHandle handle, BOOL all)
               {
                  FTEFree(sectbuf);
                  FTEFree(sectbuf1);
-                 return FALSE;
+                 RETURN_FTEERR(FALSE);
               }
                        
               bytesinlastsector = bytesinfat % BYTESPERSECTOR;
@@ -229,21 +224,21 @@ static BOOL PrivateBackupFat(RDWRHandle handle, BOOL all)
               {
                  FTEFree(sectbuf);
                  FTEFree(sectbuf1);
-                 return FALSE;
+		 RETURN_FTEERR(FALSE); 
               }
            }
            else
            {
               FTEFree(sectbuf);
               FTEFree(sectbuf1);
-              return FALSE;
+	      RETURN_FTEERR(FALSE); 
            }
         }
     }
 
     FTEFree(sectbuf);
     FTEFree(sectbuf1);
-    return result;
+    RETURN_FTEERR(result);
 }
 
 
@@ -254,8 +249,11 @@ static BOOL PrivateBackupFat(RDWRHandle handle, BOOL all)
 *************************************************************/
 
 BOOL BackupFat(RDWRHandle handle)
-{
-    return PrivateBackupFat(handle, TRUE);
+{ 
+    BOOL retVal;
+    
+    retVal = PrivateBackupFat(handle, TRUE);
+    RETURN_FTEERR(retVal);
 }
 
 /************************************************************
@@ -283,7 +281,7 @@ BOOL SynchronizeFATs(RDWRHandle handle)
        }
        handle->FatLabelsChanged = FALSE;
 
-       return result;
+       RETURN_FTEERR(result);
     }
     return TRUE;
 }

@@ -57,8 +57,9 @@ struct DCB *dcb = &Dcb;
     int86x(0x26,&regs,&regs,&sregs);
 
     if (regs.x.cflag) {
-	return DOS_ERR;                 /*  for later retrieval */
+   return DOS_ERR;                 /*  for later retrieval */
     }
 
     return DISK_OK;
 }
+

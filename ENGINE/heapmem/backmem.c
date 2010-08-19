@@ -23,7 +23,10 @@
 
 #include <stdlib.h>
 #include <string.h>
+
+#ifndef __GNUC__
 #include <dos.h>
+#endif
 
 #ifdef DEBUG
 #include <stdio.h>
@@ -31,7 +34,7 @@
 
 #include "bool.h"
 #include "backmem.h"
-#include "FTEerr.h"
+#include "fteerr.h"
 
 struct FreeListElement
 {

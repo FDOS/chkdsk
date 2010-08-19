@@ -21,6 +21,8 @@
    email me at:  imre.leber@worldonline.be
 */
 
+#include <assert.h>
+
 #include "fte.h"
 
 #include "xms.h"
@@ -29,22 +31,32 @@
 #include "phscache.h"
 #include "logcache.h"
 
-static unsigned long XMSStart;
-static unsigned long EMSStart;
-static unsigned long EMSEnd;
+#ifdef USE_EMS
+static unsigned XMSStart;
+#endif
+
+static unsigned EMSStart;
+static unsigned EMSEnd;
 
 /* XMS data */
 static unsigned int  XMSHandle;
 
 /* EMS data */
+#ifdef USE_EMS
 static int           EMSHandle;  
+#endif
 
-unsigned long InitialisePhysicalCache(void)
-{
-     int i;
-     unsigned EMSsize;
+extern struct LogicalBlockInfo LogicalBlocks[];
+
+unsigned InitialisePhysicalCache(void)
+{     
      unsigned long XMSsize;
-     unsigned int  EMSBase;
+    
+#ifdef USE_EMS    
+     int i;         
+     unsigned EMSsize;
+     unsigned int EMSBase;
+#endif
      
      /* Allocate XMS */ 
      if (XMSinit())
@@ -53,8 +65,11 @@ unsigned long InitialisePhysicalCache(void)
 	if (XMSsize > 65536L)   /* Don't use XMS if not at least 64 Kb available */
         {
            /* Round down to the nearest multiple of 16Kb */
-	   EMSStart = XMSsize / CACHEBLOCKSIZE;
-           XMSsize =  EMSStart * CACHEBLOCKSIZE;
+	   EMSStart = (unsigned)(XMSsize / CACHEBLOCKSIZE);
+
+	   if (EMSStart > 4096) EMSStart = 4096;	/* Maximaly 32Mb */
+	    
+	   XMSsize =  (unsigned long)EMSStart * CACHEBLOCKSIZE;
            XMSHandle = XMSalloc(XMSsize);
            
            if (!XMSHandle)
@@ -131,7 +146,9 @@ void ClosePhysicalCache(void)
 #endif
 }
 
-int GetPhysicalMemType(unsigned long physblock)
+#ifdef USE_EMS
+
+int GetPhysicalMemType(unsigned physblock)
 {
      if ((physblock >= XMSStart) && (physblock < EMSStart))
      {
@@ -142,6 +159,7 @@ int GetPhysicalMemType(unsigned long physblock)
         return EMS;
      }
         
+     assert(FALSE);
      return NOTEXT;
 }
 
@@ -150,28 +168,82 @@ BOOL IsEMSCached(void)
     return EMSStart != EMSEnd;
 }
 
-BOOL RemapXMSBlock(int logblock, unsigned long physblock)
+#endif
+
+static char* BlockAddress;
+static unsigned CurrentPhysBlock;
+
+BOOL RemapXMSBlock(int logblock, unsigned physblock)
 {
-     char* block = GetLogicalBlockAddress(logblock);
-     unsigned long CurrentPhysBlock = GetMappedPhysicalBlock(logblock);
+     BlockAddress = LogicalBlocks[logblock].address;
+     CurrentPhysBlock = LogicalBlocks[logblock].PhysicalBlock;
      
-     if (DOStoXMSmove(XMSHandle, CurrentPhysBlock * CACHEBLOCKSIZE,
-                      block, CACHEBLOCKSIZE) != CACHEBLOCKSIZE)
+     assert((logblock >= 0) && (logblock < 4));
+    
+     if (DOStoXMSmove(XMSHandle, (unsigned long)CurrentPhysBlock * CACHEBLOCKSIZE,
+                      BlockAddress, CACHEBLOCKSIZE) != CACHEBLOCKSIZE)
      {
-        return FALSE; 
+        RETURN_FTEERROR(FALSE); 
      }
 
-     if (XMStoDOSmove(block, XMSHandle, physblock * CACHEBLOCKSIZE,
+     if (XMStoDOSmove(BlockAddress, XMSHandle, (unsigned long)physblock * CACHEBLOCKSIZE,
                       CACHEBLOCKSIZE) != CACHEBLOCKSIZE)
      {
-        return FALSE;       
+        RETURN_FTEERROR(FALSE);        
      }
      
      return TRUE;
 }
 
-BOOL RemapEMSBlock(int logblock, unsigned long physblock)
+#ifdef USE_EMS      
+BOOL RemapEMSBlock(int logblock, unsigned physblock)
 {
-     return EMSmap(logblock - 4, EMSHandle,
-                   (unsigned) (physblock - EMSStart)) == 0;
+     assert((logblock >= 0) && (logblock < 4));
+     assert(physblock < EMSEnd);
+     assert(physblock >= EMSStart);
+    
+     return EMSmap(logblock, EMSHandle, physblock - EMSStart) == 0;
 }
+#endif    
+
+#ifdef _WIN32
+
+char XMSSpace[16*1024*1024];    // 16 Mb
+
+int XMSinit(){return 1;}
+
+ unsigned long XMScoreleft(void)
+ {
+    return 16*1024*1024;
+ }
+
+unsigned int XMSalloc(unsigned long size)
+{
+    return 1;
+}
+
+int  XMSfree(unsigned int handle)
+{
+    return 1;
+}
+
+
+unsigned DOStoXMSmove(unsigned int desthandle,                      
+                      unsigned long destoff, const char *src,       
+                      unsigned n)
+{
+    memcpy(&XMSSpace[destoff], src, n); 
+
+    return n;
+}
+
+unsigned XMStoDOSmove(char *dest, unsigned int srchandle,          
+                      unsigned long srcoff, unsigned n)
+{
+    memcpy(dest, &XMSSpace[srcoff], n);
+
+    return n;
+}
+
+#endif
+

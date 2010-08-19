@@ -1,11 +1,15 @@
 #ifndef LOGICAL_CACHE_H_
 #define LOGICAL_CACHE_H_
 
-unsigned long InitialiseLogicalCache(void);
-void CloseLogicalCache(void);
+struct LogicalBlockInfo
+{
+   char*    address;
+   unsigned age;
+   unsigned PhysicalBlock;
+};
 
-char* GetLogicalBlockAddress(int logicalblock);
-unsigned long GetMappedPhysicalBlock(int logicalblock);
-char* EnsureBlockMapped(unsigned long physicalblock);
+unsigned InitialiseLogicalCache(void);
+void CloseLogicalCache(void);
+char* EnsureBlockMapped(unsigned physicalblock);
 
 #endif

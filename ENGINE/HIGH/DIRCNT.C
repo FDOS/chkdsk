@@ -43,12 +43,12 @@ static BOOL counter(RDWRHandle handle, struct DirectoryPosition* pos,
     struct PipeStruct* p = *((struct PipeStruct**) buffer);
     
     entry = AllocateDirectoryEntry();
-    if (!entry) return FAIL;
+    if (!entry) RETURN_FTEERROR(FAIL);
 
     if (!GetDirectory(handle, pos, entry))
     {
        FreeDirectoryEntry(entry);
-       return FAIL;
+       RETURN_FTEERROR(FAIL);
     }
 
     if (entry->attribute == LFN_ATTRIBUTES)
@@ -64,54 +64,6 @@ static BOOL counter(RDWRHandle handle, struct DirectoryPosition* pos,
 
     FreeDirectoryEntry(entry);
     return TRUE;
-}
-
-/**************************************************************
-**                CountEntriesInRootDirectory
-***************************************************************
-** Counts the number of entries in the root directory.
-**
-** Only FAT12/16
-**************************************************************/
-
-static long CountEntriesInRootDirectory(RDWRHandle handle, char attribute)
-{
-    long count = 0;
-    unsigned i;
-    struct DirectoryEntry* entry;
-
-    long rootcount = GetNumberOfRootEntries(handle);
-    if (!rootcount) return FAIL;
-
-    entry = AllocateDirectoryEntry();
-    if (!entry) return FAIL;
-
-    for (i = 0; i < rootcount; i++)
-    {
-	if (!ReadDirEntry(handle, i, entry))
-	{
-	   FreeDirectoryEntry(entry);
-	   return FAIL;
-        }
-	if (IsLastLabel(*entry))
-	{
-	   FreeDirectoryEntry(entry);
-	   return count;
-	}
-        
-        if (entry->attribute == LFN_ATTRIBUTES)
-        {
-           if (IsLFNEntry(entry))
-              count++;
-        }
-        else if ((entry->attribute & attribute) ||
-	         (attribute == -1))
-        {
-	   count++;
-        }
-    }
-    FreeDirectoryEntry(entry);
-    return rootcount;
 }
 
 /**************************************************************
@@ -133,33 +85,13 @@ static long CountEntriesInRootDirectory(RDWRHandle handle, char attribute)
 
 long low_dircount(RDWRHandle handle, CLUSTER cluster, char attribute)
 {
-    int fatlabelsize;
     struct PipeStruct pipe, *ppipe = &pipe;
-
-    if (cluster == 0)
-    {
-       fatlabelsize = GetFatLabelSize(handle);
-       switch (fatlabelsize)
-       {
-	  case FAT12:
-	  case FAT16:
-	       return CountEntriesInRootDirectory(handle, attribute);
-	  case FAT32:
-	       cluster = GetFAT32RootCluster(handle);
-	       if (cluster)
-		  break;
-	       else
-		  return FAIL;
-	  default:
-	       return FAIL;
-       }
-    }
 
     pipe.count     = 0;
     pipe.attribute = attribute;
 
     if (!TraverseSubdir(handle, cluster, counter, (void**) &ppipe, TRUE))
-       return FAIL;
+       RETURN_FTEERROR(FAIL);
 
     return pipe.count;
 }

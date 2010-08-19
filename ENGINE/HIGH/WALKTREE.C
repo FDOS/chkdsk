@@ -39,7 +39,7 @@
 
 #include <string.h>
 
-#include "FTE.h"
+#include "fte.h"
 
 #define DIR_STACK_DEPTH 128
 
@@ -105,13 +105,13 @@ BOOL WalkDirectoryTree(RDWRHandle handle,
     pipe.stop      = FALSE;
 
     if (!TraverseRootDir(handle, ActionWalker, (void**)&ppipe, TRUE))
-       return FALSE;
+       RETURN_FTEERROR(FALSE);
     if (pipe.stop)
        return TRUE;
 
     stack = (struct StackElement*)FTEAlloc(DIR_STACK_DEPTH * sizeof(struct StackElement));
     if (!stack)
-       return FALSE;
+       RETURN_FTEERROR(FALSE);
 
     for (;;)
     {
@@ -122,7 +122,7 @@ BOOL WalkDirectoryTree(RDWRHandle handle,
          if (!GetNthSubDirectoryPosition(handle, cluster, current, &pos))
 	 {
             FTEFree(stack);
-            return FALSE;
+            RETURN_FTEERROR(FALSE);
          }
 
 	 if ((pos.sector != 0) || (pos.offset != 0))
@@ -131,7 +131,7 @@ BOOL WalkDirectoryTree(RDWRHandle handle,
 	    if (!entry)
 	    {
 	       FTEFree(stack);
-	       return FALSE;
+	       RETURN_FTEERROR(FALSE);
 	    }
 
 	    if (top < DIR_STACK_DEPTH)
@@ -145,14 +145,14 @@ BOOL WalkDirectoryTree(RDWRHandle handle,
 	    {
 	       FreeDirectoryEntry(entry);   /* Directory level to deep!? */
 	       FTEFree(stack);
-	       return FALSE;
+	       RETURN_FTEERROR(FALSE);
 	    }
 
 	    if (!GetDirectory(handle, &pos, entry))
 	    {
 	       FreeDirectoryEntry(entry);
 	       FTEFree(stack);
-	       return FALSE;
+	       RETURN_FTEERROR(FALSE);
 	    }
 
 	    /* Descend in the directory tree and call the function
@@ -169,7 +169,7 @@ BOOL WalkDirectoryTree(RDWRHandle handle,
 	       {
 	          FreeDirectoryEntry(entry);
 	          FTEFree(stack);
-                  return FALSE;
+                  RETURN_FTEERROR(FALSE);
 	       }
 
 	       if (pipe.stop)
@@ -240,7 +240,7 @@ static int ActionWalker(RDWRHandle handle,
 	   pipe->stop = TRUE;
 	   return FALSE;
       case FAIL:
-	   return FAIL;
+	   RETURN_FTEERROR(FAIL);
       case TRUE:
 	   return TRUE;
     }

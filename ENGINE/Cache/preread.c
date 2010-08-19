@@ -73,7 +73,7 @@ static char* AllocateReadBuf(unsigned long filelen,
 static void FreeReadBuf(char* ReadBuf)
 {
     if (ReadBuf && (ReadBuf != DefaultReadBuf))
-       free(ReadBuf);
+       FTEFree(ReadBuf);
 }                   
 
 BOOL PreReadClusterSequence(RDWRHandle handle, CLUSTER start,
@@ -90,11 +90,11 @@ BOOL PreReadClusterSequence(RDWRHandle handle, CLUSTER start,
     if (length == 0) return TRUE;
     
     sectorspercluster = GetSectorsPerCluster(handle);
-    if (!sectorspercluster) return FALSE;
+    if (!sectorspercluster) RETURN_FTEERROR(FALSE); 
     
     sectorstoread = length * sectorspercluster; 
     startsector = ConvertToDataSector(handle, start);
-    if (!startsector) return FALSE;
+    if (!startsector) RETURN_FTEERROR(FALSE); 
        
     ReadBuf = AllocateReadBuf(sectorstoread * BYTESPERSECTOR, &BufSize);
     BufSize /= BYTESPERSECTOR;
@@ -107,7 +107,7 @@ BOOL PreReadClusterSequence(RDWRHandle handle, CLUSTER start,
        if (!OnlyFilledRead(handle, startsector, BufSize, ReadBuf) == -1)
         {
            FreeReadBuf(ReadBuf);     
-           return FALSE;
+           RETURN_FTEERROR(FALSE); 
         }
         
         startsector += BufSize;
@@ -118,7 +118,7 @@ BOOL PreReadClusterSequence(RDWRHandle handle, CLUSTER start,
         if (!OnlyFilledRead(handle, startsector, rest, ReadBuf) == -1)
         {
            FreeReadBuf(ReadBuf);      
-           return FALSE;
+           RETURN_FTEERROR(FALSE); 
         }        
     }
     
@@ -147,7 +147,7 @@ BOOL PreReadClusterChain(RDWRHandle handle, CLUSTER start)
     if (!CacheActive()) return TRUE;
         
     sectorspercluster = GetSectorsPerCluster(handle);
-    if (!sectorspercluster) return FALSE;
+    if (!sectorspercluster) RETURN_FTEERROR(FALSE); 
     
     ReadBuf = AllocateReadBuf(MAX_ALLOCATING, &BufSize);
     BufSize /= BYTESPERSECTOR;    
@@ -162,7 +162,7 @@ BOOL PreReadClusterChain(RDWRHandle handle, CLUSTER start)
     if (!FileTraverseFat(handle, start, ClusterPreReader, (void**) &ppipe))
     {            
        FreeReadBuf(ReadBuf);  
-       return FALSE;
+       RETURN_FTEERROR(FALSE); 
     }
        
     if (pipe.index)
@@ -171,14 +171,14 @@ BOOL PreReadClusterChain(RDWRHandle handle, CLUSTER start)
        if (!firstsector)
        {        
           FreeReadBuf(ReadBuf);       
-          return FALSE;       
+          RETURN_FTEERROR(FALSE); 
        }
        
        if (ReadSectors(handle, pipe.index*sectorspercluster, 
                        firstsector, pipe.buf) == -1)
        {
            FreeReadBuf(ReadBuf);  
-           return FALSE;
+           RETURN_FTEERROR(FALSE); 
        }    
     }
     
@@ -203,7 +203,7 @@ static BOOL ClusterPreReader(RDWRHandle handle, CLUSTER label,
     {
        if (!PreReadLargeCluster(handle, datasector, sectorspercluster, 
                                 pipe->buf, pipe->bufsize))
-          return FAIL;
+          RETURN_FTEERROR(FAIL); 
     }
     else
     {
@@ -214,12 +214,12 @@ static BOOL ClusterPreReader(RDWRHandle handle, CLUSTER label,
             (pipe->index == pipe->maxindex)))
        {    
           firstsector = ConvertToDataSector(handle, pipe->firstcluster);
-          if (!firstsector) return FAIL;
+          if (!firstsector) RETURN_FTEERROR(FAIL); 
              
           if (ReadSectors(handle, pipe->index*sectorspercluster, 
                           firstsector, pipe->buf) == -1)
           {
-              return FAIL;
+              RETURN_FTEERROR(FAIL); 
           }
             
           pipe->index = 0;
@@ -248,7 +248,7 @@ static BOOL PreReadLargeCluster(RDWRHandle handle,
     {
         if (ReadSectors(handle, bufsize, start, buftouse) == -1)
         {
-           return FALSE;
+           RETURN_FTEERROR(FALSE); 
         }  
         
         start += bufsize;
@@ -258,7 +258,7 @@ static BOOL PreReadLargeCluster(RDWRHandle handle,
     {
         if (ReadSectors(handle, rest, start, buftouse) == -1)
         {
-           return FALSE;
+           RETURN_FTEERROR(FALSE); 
         }      
     }
   
@@ -275,11 +275,11 @@ static BOOL OnlyFilledRead(RDWRHandle handle, SECTOR lsect,
     for (i = 0; i < numsectors; i++)
     {
         cluster = DataSectorToCluster(handle, lsect+i);
-        if (!cluster) return FALSE;
+        if (!cluster) RETURN_FTEERROR(FALSE); 
                 
         if (!GetNthCluster(handle, cluster, &label))
         {
-           return FALSE;
+           RETURN_FTEERROR(FALSE); 
         }
         
         if (FAT_FREE(label) || FAT_BAD(label))
@@ -288,7 +288,7 @@ static BOOL OnlyFilledRead(RDWRHandle handle, SECTOR lsect,
            {        
               if (ReadSectors(handle, i, start, buf) == -1)
               {
-                 return FALSE;
+                 RETURN_FTEERROR(FALSE); 
               }
            }
                   
@@ -301,7 +301,7 @@ static BOOL OnlyFilledRead(RDWRHandle handle, SECTOR lsect,
        if (ReadSectors(handle, numsectors - (unsigned)(start - lsect), 
                        start, buf) == -1)
        {
-          return FALSE;
+          RETURN_FTEERROR(FALSE); 
        }       
     }
     

@@ -37,17 +37,17 @@ CLUSTER GetSurroundingCluster(RDWRHandle handle, struct DirectoryPosition* pos)
     CLUSTER cluster, previous;
     
     if (IsRootDirPosition(handle, pos)) /* Not allowing root directory */
-       return FALSE;                    /* position.                   */
+       RETURN_FTEERROR(FALSE);          /* position.                   */
     
     cluster = DataSectorToCluster(handle, pos->sector);
-    if (!cluster) return FALSE;
+    if (!cluster) RETURN_FTEERROR(FALSE);
     
     previous = cluster;
     
     for (;;)
     {
         if (!FindClusterInFAT(handle, cluster, &cluster))
-           return FALSE;
+           RETURN_FTEERROR(FALSE);
            
         if (!cluster) return previous;
         
@@ -81,7 +81,7 @@ void AddToFrontOfString(char* string, char* front)
 **                        FindPointingPosition
 ********************************************************************
 ** Goes through a directory and returns the position of the entry for 
-** which points to the given cluster.
+** which the first cluster points to the given cluster.
 ********************************************************************/
 
 struct Pipe 
@@ -98,7 +98,7 @@ static BOOL PointingPositionFinder(RDWRHandle handle,
     struct Pipe* pipe = *((struct Pipe**) structure);
     
     if (!GetDirectory(handle, pos, &entry))
-       return FAIL;
+       RETURN_FTEERROR(FAIL);
     
     if ((IsDeletedLabel(entry)) ||
         (IsLFNEntry(&entry)))
@@ -132,6 +132,9 @@ BOOL FindPointingPosition(RDWRHandle handle, CLUSTER parentcluster,
 ********************************************************************
 ** Traces back the fully qualified path name to which the given 
 ** directory position belongs.
+**
+** This very much relies on the fact that each directory has to have
+** a .. entry as second entry in the directory!  
 ********************************************************************/
 
 BOOL TraceFullPathName(RDWRHandle handle, struct DirectoryPosition* pos,
@@ -149,7 +152,7 @@ BOOL TraceFullPathName(RDWRHandle handle, struct DirectoryPosition* pos,
    for (;;)
    {
        if (!GetDirectory(handle, &pos1, &entry))
-          return FALSE;  
+          RETURN_FTEERROR(FALSE);
            
        /* Put the name of the directory in front of the resultant string. */
        ConvertEntryPath(userfile, entry.filename, entry.extension);
@@ -172,11 +175,11 @@ BOOL TraceFullPathName(RDWRHandle handle, struct DirectoryPosition* pos,
        surroundingcluster = GetSurroundingCluster(handle, &pos1);
        if (!surroundingcluster) return FALSE;
        parentcluster = LocatePreviousDir(handle, surroundingcluster);
-       if (!parentcluster) return FALSE;
+       if (parentcluster == 0xFFFFFFFFL) return FALSE;
        
        if (!FindPointingPosition(handle, parentcluster, surroundingcluster,
                                  &pos1))
-          return FALSE;
+          RETURN_FTEERROR(FALSE);
    }
 }   
 
@@ -199,19 +202,19 @@ BOOL GetSurroundingFile(RDWRHandle handle, CLUSTER cluster,
     CLUSTER previous, current = cluster;
     
     if (!cluster)
-       return FALSE;
+       RETURN_FTEERROR(FALSE);
        
     while (cluster)
     {
         if (!FindClusterInFAT(handle, cluster, &cluster))
-           return FAIL;
+           RETURN_FTEERROR(FAIL);
            
         previous = current;
     } 
     
     if (!FindClusterInDirectories(handle, previous, result, &found))
     {
-       return FAIL;
+       RETURN_FTEERROR(FAIL);
     }
     
     return found;
@@ -236,13 +239,13 @@ BOOL TraceClusterPathName(RDWRHandle handle, CLUSTER cluster,
     if (GetSurroundingFile(handle, cluster, &temp) == TRUE)
     {
        if (!TraceFullPathName(handle, &temp, result))
-          return FALSE;
+          RETURN_FTEERROR(FALSE);
           
        return TRUE;
     }
     else
     {
-       return FALSE;
+       RETURN_FTEERROR(FALSE);
     }
 }
 
@@ -269,14 +272,14 @@ BOOL TracePreviousDir(RDWRHandle handle, struct DirectoryPosition* thisPos,
     }
     
     surroundingcluster = GetSurroundingCluster(handle, thisPos);
-    if (!surroundingcluster) return FAIL;
+    if (!surroundingcluster) RETURN_FTEERROR(FAIL);
     
     parentcluster = LocatePreviousDir(handle, surroundingcluster);
-    if (!parentcluster) return FALSE;
+    if (parentcluster == 0xFFFFFFFFL) return FALSE;
     
     if (!FindPointingPosition(handle, parentcluster, surroundingcluster,
                               previousPos))
-       return FAIL;
+       RETURN_FTEERROR(FAIL);
      
     return TRUE;
 }

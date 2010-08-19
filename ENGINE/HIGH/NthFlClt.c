@@ -29,8 +29,6 @@ struct Pipe
    unsigned count;
    CLUSTER result;
    BOOL found;
-
-   BOOL error;
 };
 
 static BOOL NthFileClusterFinder(RDWRHandle handle, CLUSTER label,
@@ -54,23 +52,14 @@ CLUSTER GetNthFileCluster(RDWRHandle handle, CLUSTER firstclust, unsigned n,
    pipe.n = n;
    pipe.count = 0;
    pipe.result = 1;
-   pipe.error = FALSE;
    pipe.found = FALSE;
    
    if (!FileTraverseFat(handle, firstclust, NthFileClusterFinder, 
                         (void**)&ppipe))
-      return FALSE;
-      
-   if (pipe.error)
-      return FALSE;
-
-   if (pipe.found)
-      *pasttheend = FALSE;
-   else if (pipe.n >= pipe.count)
-      *pasttheend = TRUE;
-   else
-      *pasttheend = FALSE;
-      
+      RETURN_FTEERROR(FALSE);
+   
+   *pasttheend = ((!pipe.found) && (n >= pipe.count));
+         
    return pipe.result;
 }
                           
@@ -90,8 +79,7 @@ static BOOL NthFileClusterFinder(RDWRHandle handle, CLUSTER label,
    if (pipe->n == pipe->count)
    {
       pipe->result = DataSectorToCluster(handle, datasector);
-      if (!pipe->result)
-         pipe->error = TRUE;
+      if (!pipe->result) RETURN_FTEERROR(FAIL);
       
       pipe->found = TRUE;
       return FALSE;

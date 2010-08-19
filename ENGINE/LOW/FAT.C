@@ -20,19 +20,20 @@
    email me at:  imre.leber@worldonline.be
 */
 
-
+#include <assert.h>
 #include <string.h>
 
-#include "..\..\misc\bool.h"
-#include "..\header\rdwrsect.h"
-#include "..\header\fat.h"
-#include "..\header\boot.h"
-#include "..\header\direct.h"
-#include "..\header\fatconst.h"
-#include "..\header\FSInfo.h"
-#include "..\header\FTEMem.h"
-#include "..\header\Traversl.h"
-#include "..\header\dtstrct.h"
+#include "../../misc/bool.h"
+#include "../header/rdwrsect.h"
+#include "../header/fat.h"
+#include "../header/boot.h"
+#include "../header/direct.h"
+#include "../header/fatconst.h"
+#include "../header/fsinfo.h"
+#include "../header/ftemem.h"
+#include "../header/traversl.h"
+#include "../header/dtstrct.h"
+#include "../header/fteerr.h"
 
 /*******************************************************************
 **                        GetFatStart
@@ -60,12 +61,12 @@ int GetFatLabelSize(RDWRHandle handle)
     else
     {
        boot = AllocateBootSector();
-       if (!boot) return FALSE;
+       if (!boot) RETURN_FTEERR(FALSE);
        
        if (!ReadBootSector(handle, boot)) 
        {
           FreeBootSector(boot);
-          return FALSE;      
+          RETURN_FTEERR(FALSE);
        }
        handle->FATtype = DetermineFATType(boot);
        
@@ -94,23 +95,27 @@ SECTOR GetDataAreaStart(RDWRHandle handle)
     {
        RootDirSectors = 0;
     }
-    else
+    else if (fatlabelsize)
     {
+       assert((fatlabelsize == FAT12) || (fatlabelsize == FAT16) || (fatlabelsize == FAT32));    	
+	
        rootcount = GetNumberOfRootEntries(handle);
-       if (!rootcount) return FALSE;
+       if (!rootcount) RETURN_FTEERR(FALSE);
        
        RootDirSectors = (((SECTOR) rootcount * 32) +
                           (BYTESPERSECTOR - 1)) / BYTESPERSECTOR; 
     }
+    else
+       return FALSE;
     
     fatsize = GetSectorsPerFat(handle); 
-    if (!fatsize) return FALSE;
+    if (!fatsize) RETURN_FTEERR(FALSE);
     
     NumberOfFats = GetNumberOfFats(handle);
-    if (!NumberOfFats) return FALSE;
+    if (!NumberOfFats) RETURN_FTEERR(FALSE);
     
     reservedsectors = GetReservedSectors(handle);
-    if (!reservedsectors) return FALSE;
+    if (!reservedsectors) RETURN_FTEERR(FALSE);
     
     return (SECTOR)reservedsectors + 
                    ((SECTOR)fatsize * (SECTOR)NumberOfFats) +
@@ -133,11 +138,13 @@ CLUSTER DataSectorToCluster(RDWRHandle handle, SECTOR sector)
     unsigned char sectorspercluster;
     SECTOR datastart;  
     
+    assert(sector);
+    
     sectorspercluster = GetSectorsPerCluster(handle);
-    if (!sectorspercluster) return FALSE;
+    if (!sectorspercluster) RETURN_FTEERR(FALSE);
     
     datastart = GetDataAreaStart(handle);
-    if (!datastart) return FALSE;        
+    if (!datastart) RETURN_FTEERR(FALSE);        
 
     sector = ((sector-datastart) / sectorspercluster) * sectorspercluster;
 
@@ -156,11 +163,13 @@ SECTOR ConvertToDataSector(RDWRHandle handle,
     unsigned char sectorspercluster ;
     SECTOR datastart;
     
+    assert(fatcluster);
+    
     sectorspercluster = GetSectorsPerCluster(handle);
-    if (!sectorspercluster) return FALSE;
+    if (!sectorspercluster) RETURN_FTEERR(FALSE);
     
     datastart = GetDataAreaStart(handle);
-    if (!datastart) return FALSE;
+    if (!datastart) RETURN_FTEERR(FALSE);
         
     return ((FAT_CLUSTER(fatcluster)-2) * sectorspercluster) + datastart;
 }
@@ -187,8 +196,11 @@ static BOOL GetFatLabel(RDWRHandle handle,
     int     labelsize;
     CLUSTER cluster;
 
+    assert(readbuf);
+    assert(labelnr);
+    
     labelsize = GetFatLabelSize(handle);
-    if (!labelsize) return FALSE;
+    if (!labelsize) RETURN_FTEERR(FALSE);
 
     labelnr  = FAT_CLUSTER(labelnr);
     labelnr %= (FATREADBUFSIZE * 8 / labelsize);
@@ -213,7 +225,7 @@ static BOOL GetFatLabel(RDWRHandle handle,
        memcpy(label, &readbuf[(unsigned) labelnr << 2], sizeof(CLUSTER));
     }
     else
-       return FALSE;
+        RETURN_FTEERR(FALSE);
 
     return TRUE;
 }
@@ -237,7 +249,7 @@ static BOOL LastFatLabel(RDWRHandle handle, CLUSTER label)
     else if (labelsize == FAT32)
        return (FAT32_LAST(label));
 
-    return FALSE;
+     RETURN_FTEERR(FALSE);
 }
 
 /*******************************************************************
@@ -272,7 +284,7 @@ static CLUSTER GeneralizeLabel(RDWRHandle handle, CLUSTER label)
       return FAT32_CLUSTER(label);
    }
    else
-      return FALSE;
+       RETURN_FTEERR(FALSE);
 }
 
 /*******************************************************************
@@ -294,33 +306,35 @@ BOOL LinearTraverseFat(RDWRHandle handle,
     int      toreadsectors;
     unsigned long  toreadlabels, labelsinbuf, dataclusters;
     char     *buffer;
-
+    
     CLUSTER  label;
     SECTOR   datasector;
 
     unsigned short sectorsperfat;
     unsigned char  sectorspercluster;
 
+    assert(func);
+
     fatstart = GetFatStart(handle);
-    if (!fatstart) return FALSE;
+    if (!fatstart) RETURN_FTEERR(FALSE);
 
     sectorsperfat     = GetSectorsPerFat(handle);
-    if (!sectorsperfat) return FALSE;
+    if (!sectorsperfat) RETURN_FTEERR(FALSE);
 
     sectorspercluster = GetSectorsPerCluster(handle);
-    if (!sectorspercluster) return FALSE;
+    if (!sectorspercluster) RETURN_FTEERR(FALSE);
 
     dataclusters = GetLabelsInFat(handle);
-    if (!dataclusters) return FALSE;
+    if (!dataclusters) RETURN_FTEERR(FALSE);
 
     iterations = sectorsperfat / SECTORSPERREADBUF;
     rest       = sectorsperfat % SECTORSPERREADBUF;
 
-    //toreadsectors = SECTORSPERREADBUF;
+    /* toreadsectors = SECTORSPERREADBUF; */
     toreadlabels  = labelsinbuf = FATREADBUFSIZE * 8 / GetFatLabelSize(handle);
         
     buffer = (char*) AllocateSectors(handle, SECTORSPERREADBUF);
-    if (!buffer) return FALSE;
+    if (!buffer) RETURN_FTEERR(FALSE);
     
     for (i = 0; i < iterations + (rest > 0); i++)
     {
@@ -330,7 +344,7 @@ BOOL LinearTraverseFat(RDWRHandle handle,
 			fatstart + (i*SECTORSPERREADBUF), buffer) == -1)
         {
 	   FreeSectors((SECTOR*)buffer);
-           return FALSE;
+           RETURN_FTEERR(FALSE);
         }
            
         for (; j < toreadlabels; j++)
@@ -340,7 +354,7 @@ BOOL LinearTraverseFat(RDWRHandle handle,
 	    if (!GetFatLabel(handle, buffer, j, &label)) 
             {
                FreeSectors((SECTOR*)buffer);
-               return FALSE;
+               RETURN_FTEERR(FALSE);
             }
 
 	    datasector = ConvertToDataSector(handle, j);
@@ -352,7 +366,7 @@ BOOL LinearTraverseFat(RDWRHandle handle,
 		    return TRUE;
 	       case FAIL:
 		    FreeSectors((SECTOR*)buffer);
-		    return FALSE;
+		    RETURN_FTEERR(FALSE);
 	    }
 	}
 	toreadlabels += labelsinbuf;
@@ -381,16 +395,18 @@ BOOL FileTraverseFat(RDWRHandle handle, CLUSTER startcluster,
     SECTOR  sector;
 
     SECTOR  fatstart;
+    
+    assert(func);
 
     cluster = FAT_CLUSTER(startcluster);
     fatstart = GetFatStart(handle);
-    if (!fatstart) return FALSE;
+    if (!fatstart) RETURN_FTEERR(FALSE);
 
     fatlabelsize = GetFatLabelSize(handle);
-    if (!fatlabelsize) return FALSE;
+    if (!fatlabelsize) RETURN_FTEERR(FALSE);
     
     buffer = (char*) AllocateSectors(handle, SECTORSPERREADBUF);
-    if (!buffer) return FALSE;
+    if (!buffer) RETURN_FTEERR(FALSE);
 
     while (!LastFatLabel(handle, cluster))
     {
@@ -403,7 +419,7 @@ BOOL FileTraverseFat(RDWRHandle handle, CLUSTER startcluster,
 			   buffer) == -1)
            {
 	      FreeSectors((SECTOR*)buffer);
-              return FALSE;
+              RETURN_FTEERR(FALSE);
            }
 
 	   prevpart = seeking;
@@ -413,7 +429,7 @@ BOOL FileTraverseFat(RDWRHandle handle, CLUSTER startcluster,
 	if (!GetFatLabel(handle, buffer, cluster, &cluster))
         {        
            FreeSectors((SECTOR*)buffer);
-           return FALSE;
+           RETURN_FTEERR(FALSE);
         }
         
         /*
@@ -432,7 +448,7 @@ BOOL FileTraverseFat(RDWRHandle handle, CLUSTER startcluster,
         if (FAT_BAD(gencluster) || FAT_FREE(gencluster))
         {
 	   FreeSectors((SECTOR*)buffer);
-           return FALSE;           
+           RETURN_FTEERR(FALSE);
         }
 
 	switch (func(handle, gencluster, sector, structure))
@@ -442,7 +458,7 @@ BOOL FileTraverseFat(RDWRHandle handle, CLUSTER startcluster,
 		return TRUE;
 	   case FAIL:
 		FreeSectors((SECTOR*)buffer);
-		return FALSE;
+		RETURN_FTEERR(FALSE);
 	}
     }
 
@@ -463,12 +479,16 @@ BOOL ReadFatLabel(RDWRHandle handle, CLUSTER labelnr,
     SECTOR  sectorstart, blockindex;
     int     labelsinbuf;
     BOOL    retVal;
+    
+    assert(label);
 
     labelsize = GetFatLabelSize(handle);
-    if (!labelsize) return FALSE;
+    if (!labelsize) RETURN_FTEERR(FALSE);
+	
+    assert((labelsize == FAT12) || (labelsize == FAT16) || (labelsize == FAT32));
 
     sectorstart = GetFatStart(handle);
-    if (!sectorstart) return FALSE;
+    if (!sectorstart) RETURN_FTEERR(FALSE);
 
     labelsinbuf  = FATREADBUFSIZE * 8 / labelsize;
     blockindex   = labelnr / labelsinbuf;
@@ -480,7 +500,7 @@ BOOL ReadFatLabel(RDWRHandle handle, CLUSTER labelnr,
        if (ReadSectors(handle, SECTORSPERREADBUF, sectorstart,
                        handle->FatCache) == -1)
        {
-          return FALSE;
+           RETURN_FTEERR(FALSE);
        }
        
        handle->FatCacheStart = sectorstart;
@@ -494,7 +514,7 @@ BOOL ReadFatLabel(RDWRHandle handle, CLUSTER labelnr,
 }
 
 /*******************************************************************
-**                        FileTraverseFat
+**                        WriteFatLabel
 ********************************************************************
 ** Writes a label to the FAT at the specified location.
 **
@@ -514,29 +534,29 @@ int WriteFatLabel(RDWRHandle handle, CLUSTER labelnr,
     SECTOR   sectorstart;
     unsigned long sectorsperfat, sectorsperbit, bit;
     int      labelsinbuf, temp, i;
-
+    
     /* First invalidate FAT cache. */
     handle->FatCacheUsed = FALSE;
     
     labelsize = GetFatLabelSize(handle);
-    if (!labelsize) return FALSE;
+    if (!labelsize) RETURN_FTEERR(FALSE);
 
     sectorstart = GetFatStart(handle);
-    if (!sectorstart) return FALSE;
+    if (!sectorstart) RETURN_FTEERR(FALSE);
 
     sectorsperfat = GetSectorsPerFat(handle);
-    if (!sectorsperfat) return FALSE;
+    if (!sectorsperfat) RETURN_FTEERR(FALSE);
 
     labelsinbuf  = FATREADBUFSIZE * 8 / labelsize;
     sectorstart += ((SECTOR) labelnr / labelsinbuf) * SECTORSPERREADBUF;
 
     buffer = (char*) AllocateSectors(handle, SECTORSPERREADBUF);
-    if (!buffer) return FALSE;
+    if (!buffer) RETURN_FTEERR(FALSE);
    
     if (ReadSectors(handle, SECTORSPERREADBUF, sectorstart, buffer) == -1)
     {
 	FreeSectors((SECTOR*)buffer);
-        return FALSE;
+         RETURN_FTEERR(FALSE);
     }
  
     labelnr %= (FATREADBUFSIZE * 8 / labelsize);   
@@ -647,7 +667,25 @@ BOOL IsLabelValid(RDWRHandle handle, CLUSTER label)
 
    /* Check wether the label is in the right range */
    labelsinfat = GetLabelsInFat(handle);
-   if (!labelsinfat) return FAIL;
+   if (!labelsinfat)  RETURN_FTEERR(FAIL);
 
    return label < labelsinfat;
 }
+
+/*************************************************************************
+**                         IsLabelValidInFile
+**************************************************************************
+** Returns wether the given label is valid as part of a file chain.
+***************************************************************************/
+
+BOOL IsLabelValidInFile(RDWRHandle handle, CLUSTER label)
+{
+    if (FAT_LAST(label)) 
+	return TRUE;    
+    
+    if (!FAT_NORMAL(label)) 
+	return FALSE;    
+    
+    return IsLabelValid(handle, label);
+}
+

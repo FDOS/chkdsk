@@ -1,4 +1,4 @@
-/*
+/*	
    boot.c - boot sector manipulation code.
    Copyright (C) 2000 Imre Leber
 
@@ -20,18 +20,24 @@
    email me at:  imre.leber@worldonline.be
 */
 
+#include <assert.h>
 #include <string.h>
-#include <dos.h>
+#include <time.h>
 
-#include "..\..\misc\bool.h"
-#include "..\header\fat.h"
-#include "..\header\rdwrsect.h"
-#include "..\header\direct.h"
-#include "..\header\boot.h"
-#include "..\header\fatconst.h"
-#include "..\header\FSInfo.h"
-#include "..\header\FTEMem.h"
-#include "..\..\misc\useful.h"
+#ifdef __GNUC__
+#include <sys/time.h>
+#endif
+
+#include "../../misc/bool.h"
+#include "../header/fat.h"
+#include "../header/rdwrsect.h"
+#include "../header/direct.h"
+#include "../header/boot.h"
+#include "../header/fatconst.h"
+#include "../header/fsinfo.h"
+#include "../header/ftemem.h"
+#include "../../misc/useful.h"
+#include "../header/fteerr.h"
 
 /************************************************************
 **                  UpdateHandleStruct
@@ -77,6 +83,7 @@ static void UpdateHandleStruct(RDWRHandle handle,
 
        /* For FAT12/16 this is garbage. */
        handle->RootCluster = buffer->fs.spc32.RootCluster;
+       handle->FSInfo = buffer->fs.spc32.FSInfo;
 }
 
 /************************************************************
@@ -95,7 +102,7 @@ BOOL ReadBootSector(RDWRHandle handle, struct BootSectorStruct* buffer)
        return TRUE;
     }
     else
-       return FALSE;
+       RETURN_FTEERR(FALSE);	    
 }
 
 /************************************************************
@@ -108,10 +115,15 @@ BOOL ReadBootSector(RDWRHandle handle, struct BootSectorStruct* buffer)
 
 BOOL WriteBootSector(RDWRHandle handle, struct BootSectorStruct* buffer)
 {
+    BOOL retVal;
+    
+    assert(buffer);
+    
     /* Synchronize cache values. */
     UpdateHandleStruct(handle, buffer); 
-
-    return (WriteSectors(handle, 1, 0, buffer, WR_UNKNOWN) != -1);
+    
+    retVal = WriteSectors(handle, 1, 0, buffer, WR_UNKNOWN) != -1;
+    RETURN_FTEERR(retVal);
 }
 
 /************************************************************
@@ -136,13 +148,14 @@ STATIC BOOL ReadBootSectorIfNeeded(RDWRHandle handle)
     if (handle->SectorsPerCluster == 0)
     {
        boot = AllocateBootSector();
-       if (!boot) return FALSE;
+       if (!boot) RETURN_FTEERR(FALSE);
     
        retVal = ReadBootSector(handle, boot);
     
        FreeBootSector(boot);
     }
-    return retVal;
+
+    RETURN_FTEERR(retVal);
 }
 
 /************************************************************
@@ -165,12 +178,12 @@ void InvalidateBootInfo(RDWRHandle handle)
 ** Returns the number of sectors per cluster.
 *************************************************************/
 
-unsigned char GetSectorsPerCluster(RDWRHandle handle)
+unsigned long GetSectorsPerCluster(RDWRHandle handle)
 {
     if (ReadBootSectorIfNeeded(handle))
        return handle->SectorsPerCluster;
     else
-       return FALSE;
+       RETURN_FTEERR(FALSE);
 }
 
 /************************************************************
@@ -184,7 +197,7 @@ unsigned short GetReservedSectors(RDWRHandle handle)
     if (ReadBootSectorIfNeeded(handle))
        return handle->ReservedSectors;
     else
-       return FALSE;
+       RETURN_FTEERR(FALSE); 	
 }
 
 /************************************************************
@@ -198,7 +211,7 @@ unsigned char GetNumberOfFats(RDWRHandle handle)
     if (ReadBootSectorIfNeeded(handle))
        return handle->Fats;
     else
-       return FALSE;
+       RETURN_FTEERR(FALSE);
 }
 
 /************************************************************
@@ -213,7 +226,7 @@ unsigned short GetNumberOfRootEntries(RDWRHandle handle)
     if (ReadBootSectorIfNeeded(handle))
        return handle->NumberOfFiles;
     else
-       return FALSE;
+       RETURN_FTEERR(FALSE);	
 }
 
 /************************************************************
@@ -227,7 +240,7 @@ unsigned char GetMediaDescriptor(RDWRHandle handle)
     if (ReadBootSectorIfNeeded(handle))
        return handle->descriptor;
     else
-       return FALSE;
+       RETURN_FTEERR(FALSE);	
 }
 
 /************************************************************
@@ -241,7 +254,7 @@ unsigned long GetNumberOfSectors(RDWRHandle handle)
     if (ReadBootSectorIfNeeded(handle))
        return handle->NumberOfSectors;
     else
-       return FALSE;
+       RETURN_FTEERR(FALSE); 	
 }
 
 /************************************************************
@@ -255,7 +268,7 @@ unsigned long GetSectorsPerFat(RDWRHandle handle)
     if (ReadBootSectorIfNeeded(handle))
        return handle->SectorsPerFat;
     else
-       return FALSE;
+       RETURN_FTEERR(FALSE);	
 }
 
 /************************************************************
@@ -269,7 +282,7 @@ unsigned short GetSectorsPerTrack(RDWRHandle handle)
     if (ReadBootSectorIfNeeded(handle))
        return handle->SectorsPerTrack;
     else
-       return FALSE;
+       RETURN_FTEERR(FALSE);	    
 }
 
 /************************************************************
@@ -283,7 +296,7 @@ unsigned short GetReadWriteHeads(RDWRHandle handle)
     if (ReadBootSectorIfNeeded(handle))
        return handle->Heads;
     else
-       return FALSE;
+       RETURN_FTEERR(FALSE);	    	           
 }
 
 /************************************************************
@@ -303,7 +316,7 @@ unsigned long GetClustersInDataArea(RDWRHandle handle)
 {
     unsigned char sectorspercluster = GetSectorsPerCluster(handle);
 
-    if (!sectorspercluster) return FALSE;
+    if (!sectorspercluster) RETURN_FTEERR(FALSE);	    
 
     return (GetNumberOfSectors(handle) -
             GetReservedSectors(handle) -
@@ -322,13 +335,18 @@ unsigned long GetClustersInDataArea(RDWRHandle handle)
 
 unsigned long GetLabelsInFat(RDWRHandle handle)
 {
-    return GetClustersInDataArea(handle)+2;
+    unsigned long clustersindataarea = GetClustersInDataArea(handle);
+    
+    if (!clustersindataarea) RETURN_FTEERR(FALSE);
+    
+    return clustersindataarea+2;
 }
 
 /************************************************************
 **                    GetBiosDriveNumber
 *************************************************************
 ** Returns the drive number of the volume as known by the BIOS
+** or 0xff on error
 **
 ** Notice: not all volumes are known by the BIOS
 *************************************************************/
@@ -341,12 +359,12 @@ unsigned char GetBiosDriveNumber(RDWRHandle handle)
     struct BootSectorStruct* boot;
     
     boot = AllocateBootSector();
-    if (!boot) return FALSE;
+    if (!boot) RETURN_FTEERR(0xff);
     
     if (!ReadBootSector(handle, boot))
     {
        FreeBootSector(boot);     
-       return 0xff; 
+       RETURN_FTEERR(0xff);
     }
     
     if (DetermineFATType(boot) == FAT32)
@@ -368,8 +386,8 @@ unsigned char GetBiosDriveNumber(RDWRHandle handle)
 ** Returns wether the optional fields in the BPB are filled
 *************************************************************/
 
-unsigned BOOL  PrivateIsVolumeDataFilled(RDWRHandle handle,
-                                         unsigned char signature)
+unsigned BOOL PrivateIsVolumeDataFilled(RDWRHandle handle,
+                                        unsigned char signature)
 {
     /* Not cached in the handle structure because this function
        should not be called anyway.                             */
@@ -377,12 +395,12 @@ unsigned BOOL  PrivateIsVolumeDataFilled(RDWRHandle handle,
     struct BootSectorStruct* boot;
     
     boot = AllocateBootSector();
-    if (!boot) return 0xff;
+    if (!boot) RETURN_FTEERR(0xff);
     
     if (!ReadBootSector(handle, boot))
     {
        FreeBootSector(boot);     
-       return 0xff;
+       RETURN_FTEERR(0xff);
     }
     
     if (DetermineFATType(boot) == FAT32)
@@ -428,12 +446,12 @@ unsigned long GetDiskSerialNumber(RDWRHandle handle)
     struct BootSectorStruct* boot;
     
     boot = AllocateBootSector();
-    if (!boot) return FALSE;
+    if (!boot) RETURN_FTEERR(0xff);
     
     if (!ReadBootSector(handle, boot))
     {
        FreeBootSector(boot);     
-       return 0xff; 
+       RETURN_FTEERR(0xff); 
     }
     
     if (DetermineFATType(boot) == FAT32)
@@ -456,12 +474,12 @@ BOOL GetBPBVolumeLabel(RDWRHandle handle, char* label)
     struct BootSectorStruct* boot;
   
     boot = AllocateBootSector();
-    if (!boot) return FALSE;
+    if (!boot) RETURN_FTEERR(FALSE);
     
     if (!ReadBootSector(handle, boot))
     {
        FreeBootSector(boot);     
-       return FALSE;
+       RETURN_FTEERR(FALSE);
     }
     
     if (DetermineFATType(boot) == FAT32)
@@ -487,12 +505,12 @@ BOOL GetBPBFileSystemString(RDWRHandle handle, char* label)
     struct BootSectorStruct* boot;
     
     boot = AllocateBootSector();
-    if (!boot) return FALSE;
+    if (!boot) RETURN_FTEERR(FALSE);
     
     if (!ReadBootSector(handle, boot))
     {
        FreeBootSector(boot);     
-       return FALSE;
+       RETURN_FTEERR(FALSE);
     }
     
     if (DetermineFATType(boot) == FAT32)
@@ -512,13 +530,16 @@ BOOL GetBPBFileSystemString(RDWRHandle handle, char* label)
 ** Notice that the previous function returns the FAT
 ** determination string the value returned there is only
 ** informative and has no real value. The type of FAT is ONLY
-** determined by the cluster number.
+** determined by the number of clusters.
 *************************************************************/
 
 int DetermineFATType(struct BootSectorStruct* boot)
 {
     unsigned long RootDirSectors, FatSize, TotalSectors, DataSector;
     unsigned long CountOfClusters;
+    
+    assert(boot->BytesPerSector);
+    assert(boot->SectorsPerCluster);
     
     RootDirSectors = ((boot->NumberOfFiles * 32) +
                       (boot->BytesPerSector-1)) /
@@ -567,9 +588,11 @@ unsigned short GetFAT32Version(RDWRHandle handle)
 {
     short retVal;    
     struct BootSectorStruct* boot;
+
+    assert(GetFatLabelSize(handle) == FAT32);
     
     boot = AllocateBootSector();
-    if (!boot) return FALSE; 
+    if (!boot) RETURN_FTEERR(FALSE); 
    
     if (!ReadBootSector(handle, boot))
     {
@@ -581,7 +604,7 @@ unsigned short GetFAT32Version(RDWRHandle handle)
     }
     
     FreeBootSector(boot);
-    return retVal;
+    RETURN_FTEERR(retVal);
 }
 
 /************************************************************
@@ -592,10 +615,12 @@ unsigned short GetFAT32Version(RDWRHandle handle)
 
 unsigned long GetFAT32RootCluster(RDWRHandle handle)
 {
+    assert(GetFatLabelSize(handle) == FAT32);
+    
     if (ReadBootSectorIfNeeded(handle))
        return handle->RootCluster;
     else
-       return FALSE;
+       RETURN_FTEERR(FALSE);
 }
 
 /************************************************************
@@ -606,10 +631,12 @@ unsigned long GetFAT32RootCluster(RDWRHandle handle)
 
 unsigned short GetFSInfoSector(RDWRHandle handle)
 {
+    assert(GetFatLabelSize(handle) == FAT32);
+    
     if (ReadBootSectorIfNeeded(handle))
        return handle->FSInfo;
     else
-       return FALSE;
+       RETURN_FTEERR(FALSE);
 }
 
 /************************************************************
@@ -623,8 +650,10 @@ unsigned short GetFAT32BackupBootSector(RDWRHandle handle)
     short retVal;
     struct BootSectorStruct* boot;
   
+    assert(GetFatLabelSize(handle) == FAT32);
+    
     boot = AllocateBootSector();
-    if (!boot) return FALSE; 
+    if (!boot) RETURN_FTEERR(FALSE);
     
     if (!ReadBootSector(handle, boot))
     {
@@ -636,11 +665,11 @@ unsigned short GetFAT32BackupBootSector(RDWRHandle handle)
     }
     
     FreeBootSector(boot);
-    return retVal;
+    RETURN_FTEERR(retVal);
 }
 
 /*
-   The following functions take a boot sector structure in memory
+   The following functions take a boot sector structure 
    and make the changes to the boot sector in memory.
 
    This reduces the disk write overhead and the chance of disk corruption.
@@ -829,6 +858,8 @@ void WriteDiskSerialNumber(struct BootSectorStruct* boot,
 ** Calculation method comes from RBIL.
 *************************************************************/
 
+#ifdef __TURBOC__
+
 unsigned long CalculateNewSerialNumber(void)
 {
   struct time theTime;
@@ -849,6 +880,39 @@ unsigned long CalculateNewSerialNumber(void)
   
   return result;
 }
+
+#else	/* UNIX version: not completely correct */
+
+unsigned long CalculateNewSerialNumber(void)
+{ 
+  unsigned long result;
+#ifndef _WIN32	// REMOVE!!!!!!!!!!!!
+  time_t now;
+  struct tm* nowtm;
+  unsigned short first, second;
+
+	  
+  struct timeval  tval;
+  struct timezone tzone;
+  
+  gettimeofday(&tval, &tzone);
+  
+  now = time(NULL);
+  nowtm = localtime(&now);
+
+  first = ((nowtm->tm_hour << 8) + nowtm->tm_min) +
+           (nowtm->tm_year + 1900);					
+  
+  second = ((nowtm->tm_sec << 8) + (tval.tv_usec / 10)) +
+            ((nowtm->tm_mon << 8) + nowtm->tm_mday);
+  
+  result = first + (second << 16);
+#endif  
+  return result;	
+}
+
+
+#endif
 
 /************************************************************
 **                WriteBPBVolumeLabel
@@ -967,6 +1031,3 @@ void WriteFAT32BackupBootSector(struct BootSectorStruct* boot,
 {
      boot->fs.spc32.BackupBoot = backupsect;
 }
-
-
-

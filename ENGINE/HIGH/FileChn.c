@@ -73,24 +73,24 @@ BOOL CreateFileChain(RDWRHandle handle, struct DirectoryPosition* pos,
    struct DirectoryEntry entry;
 
    if (!FindFirstFreeSpace(handle, &freespace, &length))
-      return FAIL;
+      RETURN_FTEERROR(FAIL);
 
    if (length == 0)
       return FALSE;
 
    if (!GetDirectory(handle, pos, &entry))
-      return FAIL;
+      RETURN_FTEERROR(FAIL);
 
    if (!WriteFatLabel(handle, freespace, FAT_LAST_LABEL))
-      return FAIL;
+      RETURN_FTEERROR(FAIL);
 
    SetFirstCluster(freespace, &entry);
    if (!WriteDirectory(handle, pos, &entry))
    {
       if (!WriteFatLabel(handle, freespace, FAT_FREE_LABEL))
-         return FAIL;
+         RETURN_FTEERROR(FAIL);
    
-      return FAIL;
+      RETURN_FTEERROR(FAIL);
    }
 
    *newcluster = freespace;
@@ -114,7 +114,6 @@ BOOL CreateFileChain(RDWRHandle handle, struct DirectoryPosition* pos,
 BOOL ExtendFileChain(RDWRHandle handle, CLUSTER firstcluster,
                      CLUSTER* newcluster)
 {
-   BOOL pasttheend;
    CLUSTER current = firstcluster, label = current, freeclust;
 
    /* Search the end of the file chain. */
@@ -122,30 +121,30 @@ BOOL ExtendFileChain(RDWRHandle handle, CLUSTER firstcluster,
    {
       current = label;         
       if (!GetNthCluster(handle, current, &label))
-         return FAIL;
+         RETURN_FTEERROR(FAIL);
    }
 
    /* Sanity check */
    if (!FAT_LAST(label))
    {
       SetFTEerror(FTE_FILESYSTEM_BAD);
-      return FAIL;
+      RETURN_FTEERROR(FAIL);
    }
 
    /* Search a new free spot in the file system (intelligently). */
    freeclust = FindFreeCluster(handle, current);
-   if (freeclust == FALSE) return FALSE;
-   if (freeclust == FAIL)  return FAIL;
+   if (freeclust == FALSE) 	 return FALSE;
+   if (freeclust == 0xFFFFFFFFL) return FAIL;
 
    /* Add the free cluster to the file chain. */
    if (!WriteFatLabel(handle, current, freeclust))
-      return FAIL;
+      RETURN_FTEERROR(FAIL);
 
    if (!WriteFatLabel(handle, freeclust, FAT_LAST_LABEL))
    {
       /* Back track */
       WriteFatLabel(handle, current, FAT_LAST_LABEL);
-      return FAIL;
+      RETURN_FTEERROR(FAIL);
    }
 
    *newcluster = freeclust;
@@ -155,16 +154,16 @@ BOOL ExtendFileChain(RDWRHandle handle, CLUSTER firstcluster,
 static CLUSTER FindFreeCluster(RDWRHandle handle, CLUSTER spil)
 {
    CLUSTER i, label;
-   unsigned long clustersindataarea;
+   unsigned long labelsinfat;
 
-   clustersindataarea = GetLabelsInFat(handle);
-   if (!clustersindataarea) return FALSE;
+   labelsinfat = GetLabelsInFat(handle);
+   if (!labelsinfat) RETURN_FTEERROR(0xFFFFFFFFL);
 
    /* Search forward */
-   for (i = spil; i < clustersindataarea; i++)
+   for (i = spil; i < labelsinfat; i++)
    {
       if (!GetNthCluster(handle, i, &label))
-         return FAIL;
+         RETURN_FTEERROR(0xFFFFFFFFL);
 
       if (FAT_FREE(label)) return i;
    }
@@ -173,7 +172,7 @@ static CLUSTER FindFreeCluster(RDWRHandle handle, CLUSTER spil)
    for (i = spil; i >= 2; i--)
    {
       if (!GetNthCluster(handle, i, &label))
-         return FAIL;
+         RETURN_FTEERROR(0xFFFFFFFFL);
 
       if (FAT_FREE(label)) return i;
    }
@@ -186,7 +185,7 @@ static CLUSTER FindFreeCluster(RDWRHandle handle, CLUSTER spil)
 ********************************************************************
 ** Adds a directory entry to the given directory.
 **
-** Returns  TRUE  if the directory entry
+** Returns  TRUE  if the directory entry is added
 **                the allocated cluster is returned in newpos
 **
 **          FALSE if no new directory could be added
@@ -204,8 +203,6 @@ static CLUSTER FindFreeCluster(RDWRHandle handle, CLUSTER spil)
 BOOL AddDirectory(RDWRHandle handle, CLUSTER firstcluster,
                   struct DirectoryPosition* pos)
 {
-   CLUSTER rootcluster;
-
    if (!firstcluster)
    {
       switch (GetFatLabelSize(handle))
@@ -215,13 +212,12 @@ BOOL AddDirectory(RDWRHandle handle, CLUSTER firstcluster,
                return AddRootDirectory(handle, pos);
           
           case FAT32:
-               rootcluster = GetFAT32RootCluster(handle);
-               if (!rootcluster) return FAIL;
-               
-               return AddSubDirectory(handle, rootcluster, pos);
+               firstcluster = GetFAT32RootCluster(handle);
+               if (!firstcluster) RETURN_FTEERROR(FAIL);              
+               break;
 
           default:
-               return FAIL;
+               RETURN_FTEERROR(FAIL);
       }
    }
 
@@ -236,19 +232,19 @@ static BOOL AddRootDirectory(RDWRHandle handle,
    struct DirectoryEntry* entry;
 
    numentries = GetNumberOfRootEntries(handle);
-   if (!numentries) return FAIL;
+   if (!numentries) RETURN_FTEERROR(FAIL);
 
    firstdeleted = numentries;
 
    entry = AllocateDirectoryEntry();
-   if (!entry) return FAIL;
+   if (!entry) RETURN_FTEERROR(FAIL);
 
    for (i = 0; i < numentries; i++)
    {
        if (!ReadDirEntry(handle, i, entry))
        {
           FreeDirectoryEntry(entry);
-          return FAIL;
+          RETURN_FTEERROR(FAIL);
        }
 
        if (IsLastLabel(*entry))
@@ -256,23 +252,25 @@ static BOOL AddRootDirectory(RDWRHandle handle,
           FreeDirectoryEntry(entry);
           
           if (!GetRootDirPosition(handle, i, pos))
-             return FAIL;
-          else
-             return TRUE;
+             RETURN_FTEERROR(FAIL);
+         
+          return TRUE;
        }
 
-       if (IsDeletedLabel(*entry))
+       if ((IsDeletedLabel(*entry)) && (firstdeleted != numentries))
        {
           firstdeleted = i;
        }
    }
-
+   
+   FreeDirectoryEntry(entry);
+   
    if (firstdeleted < numentries)
    {
-      if (!GetRootDirPosition(handle, i, pos))
-         return FAIL;
-      else
-         return TRUE;
+      if (!GetRootDirPosition(handle, firstdeleted, pos))
+         RETURN_FTEERROR(FAIL);
+
+      return TRUE;
    }
 
    return FALSE;
@@ -285,23 +283,22 @@ static BOOL AddSubDirectory(RDWRHandle handle,
    CLUSTER current, previous = firstcluster, newcluster;
    
    /* Get the last cluster of this directory. */
-   if (!GetNthCluster(handle, firstcluster, &current))
-      return FAIL;
-
-   while (!FAT_LAST(current))
+   current = firstcluster;   
+   do 
    {
+      previous = current;
+       
+      if (!GetNthCluster(handle, current, &current))
+         RETURN_FTEERROR(FAIL);
+       
        /* Sanity check */
        if (FAT_FREE(current) || FAT_BAD(current))
        {
           SetFTEerror(FTE_FILESYSTEM_BAD);
-          return FAIL;
-       }
-
-       previous = current;
-
-      if (!GetNthCluster(handle, current, &current))
-         return FAIL;
-   }
+          RETURN_FTEERROR(FAIL);
+       }      
+      
+   } while (!FAT_LAST(current));      
 
    /* If it is not completely full, return the position of the last free
       entry. */
@@ -310,7 +307,7 @@ static BOOL AddSubDirectory(RDWRHandle handle,
       case TRUE:
            return TRUE;
       case FAIL:
-           return FAIL;
+           RETURN_FTEERROR(FAIL);
    }
 
    /* If it is completely full, allocate a new cluster and initialise it. */
@@ -318,7 +315,7 @@ static BOOL AddSubDirectory(RDWRHandle handle,
    {
       case TRUE:
            if (!InitialiseNewCluster(handle, newcluster))
-              return FAIL;
+              RETURN_FTEERROR(FAIL);
 
            pos->sector = ConvertToDataSector(handle, newcluster);
            pos->offset = 0;
@@ -326,7 +323,7 @@ static BOOL AddSubDirectory(RDWRHandle handle,
            return TRUE;
 
       case FAIL:
-           return FAIL;
+           RETURN_FTEERROR(FAIL);
    }
            
    /* If allocation was unsuccessfull, see wether a deleted entry can be found,
@@ -339,30 +336,28 @@ static BOOL GetLastEntryInCluster(RDWRHandle handle, CLUSTER cluster,
                                   struct DirectoryPosition* pos)
 {
    struct DirectoryEntry* entries;
-   unsigned char sectorspercluster;
+   unsigned long sectorspercluster;
    SECTOR target, i;
-   unsigned entriespersector, j;
+   unsigned j;
 
    sectorspercluster = GetSectorsPerCluster(handle);
-   if (!sectorspercluster) return FAIL;
-
-   entriespersector = BYTESPERSECTOR / sizeof(struct DirectoryEntry);
+   if (!sectorspercluster) RETURN_FTEERROR(FAIL);
 
    target = ConvertToDataSector(handle, cluster);
-   if (!target) return FAIL;
+   if (!target) RETURN_FTEERROR(FAIL);
 
    entries = (struct DirectoryEntry*) AllocateSector(handle);
-   if (!entries) return FAIL;
+   if (!entries) RETURN_FTEERROR(FAIL);
 
    for (i = 0; i < sectorspercluster; i++)
    {
        if (!ReadDataSectors(handle, 1, target+i, (void*) entries))
        {
           FreeSectors((SECTOR*) entries);
-          return FAIL;
+          RETURN_FTEERROR(FAIL);
        }
 
-       for (j = 0; j < entriespersector; j++)
+       for (j = 0; j < ENTRIESPERSECTOR; j++)
        {
            if (IsLastLabel(entries[j]))
            {
@@ -378,32 +373,29 @@ static BOOL GetLastEntryInCluster(RDWRHandle handle, CLUSTER cluster,
    return FALSE;
 }
 
+/* We are adding a new directory cluster, set all bytes to 0! */
 static BOOL InitialiseNewCluster(RDWRHandle handle, CLUSTER cluster)
 {
     void* buf;
     SECTOR target;
-    unsigned char sectorspercluster, i;
-
-    buf = (void*) AllocateSector(handle);
-    if (!buf) return FALSE;
-
-    memset(buf, 0, BYTESPERSECTOR);
+    unsigned long sectorspercluster, i;
 
     sectorspercluster = GetSectorsPerCluster(handle);
-    if (!sectorspercluster)
-    {
-       FreeSectors((SECTOR*) buf);
-       return FALSE;
-    }
+    if (!sectorspercluster) RETURN_FTEERROR(FALSE);
+
+    buf = (void*) AllocateSector(handle);
+    if (!buf) RETURN_FTEERROR(FALSE);
+
+    memset(buf, 0, BYTESPERSECTOR);
 
     target = ConvertToDataSector(handle, cluster);
 
     for (i = 0; i < sectorspercluster; i++)
     {
-        if (!WriteDataSectors(handle, 1, target, buf))
+        if (!WriteDataSectors(handle, 1, target+i, buf))
         {
            FreeSectors((SECTOR*) buf);
-           return FALSE;
+           RETURN_FTEERROR(FALSE);
         }
     }
 
@@ -421,7 +413,7 @@ static BOOL GetFirstDeletedEntry(RDWRHandle handle, CLUSTER firstcluster,
 
     if (!TraverseSubdir(handle, firstcluster, DeletedEntryFinder,
                         (void**) &ppipe, TRUE))
-       return FAIL;
+       RETURN_FTEERROR(FAIL);
 
     return pipe.found;
 }
@@ -434,12 +426,12 @@ static BOOL DeletedEntryFinder(RDWRHandle handle,
     struct DirectoryEntry* entry;
 
     entry = AllocateDirectoryEntry();
-    if (!entry) return FAIL;
+    if (!entry) RETURN_FTEERROR(FAIL);
 
     if (!GetDirectory(handle, pos, entry))
     {
        FreeDirectoryEntry(entry);
-       return FAIL;
+       RETURN_FTEERROR(FAIL);
     }
 
     if (IsDeletedLabel(*entry))

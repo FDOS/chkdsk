@@ -100,7 +100,8 @@ BOOL ScanFileChain(RDWRHandle handle, CLUSTER firstcluster,
     while (TRUE)
     {   
         length++;
-      
+  
+
         if (!GetNthCluster(handle, current, &label))
         {
            DestroyBitfield(bitfield);
@@ -279,6 +280,7 @@ BOOL ScanFileChain(RDWRHandle handle, CLUSTER firstcluster,
           sprintf(tempbuf, 
                   "%%s has an invalid size, the size should be about %lu, but the entry says it's %lu",
                   length * bytespercluster, entry->filesize);     
+
 
           ShowFileNameViolation(handle, filename, tempbuf); 
        

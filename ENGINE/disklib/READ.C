@@ -45,7 +45,7 @@ struct SREGS sregs;
     int86x(0x25,&regs,&regs,&sregs);
 
     if (regs.x.cflag) {
-	return DOS_ERR;                 /*  for later retrieval */
+   return DOS_ERR;                 /*  for later retrieval */
     }
 
     return DISK_OK;
@@ -83,8 +83,9 @@ struct DCB *dcb = &Dcb;
     int86x(0x25,&regs,&regs,&sregs);
 
     if (regs.x.cflag) {
-	return DOS_ERR;                 /*  for later retrieval */
+   return DOS_ERR;                 /*  for later retrieval */
     }
 
     return DISK_OK;
 }
+

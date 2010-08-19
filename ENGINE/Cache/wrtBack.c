@@ -21,6 +21,7 @@
    email me at:  imre.leber@worldonline.be
 */
 
+#include <assert.h>
 #include <string.h>
 
 #include "fte.h"
@@ -44,6 +45,18 @@ void InstallWriteFunction(unsigned devid,
                                        void* buffer, unsigned area),
                           int handle)
 {
+    assert(WriteFuncPointer < AMOF_WRITEFUNCS);
+    assert(write);
+    
+#ifndef NDEBUG
+{
+    int i;
+    for (i=0; i < WriteFuncPointer; i++)
+	if (WriteFuncs[WriteFuncPointer].devid == devid)
+	   assert(FALSE);
+}
+#endif
+    
     WriteFuncs[WriteFuncPointer].devid  = devid;
     WriteFuncs[WriteFuncPointer].write  = write;
     WriteFuncs[WriteFuncPointer].handle = handle;
@@ -55,6 +68,8 @@ void UninstallWriteFunction(unsigned devid)
 {
     int i, j;
     
+    assert(WriteFuncPointer <= AMOF_WRITEFUNCS);
+    
     for (i = 0; i < WriteFuncPointer; i++)
     {
         if (WriteFuncs[i].devid == devid)
@@ -64,11 +79,12 @@ void UninstallWriteFunction(unsigned devid)
                memcpy(&WriteFuncs[j], &WriteFuncs[j+1], 
                       sizeof(WriteFuncs[j]));
            }
-           break;
+           WriteFuncPointer--;
+           return;
         }
-    }
+    }    
     
-    WriteFuncPointer--;
+    assert(FALSE);
 }
 
 static int GetWriteFunction(unsigned devid)
@@ -83,18 +99,26 @@ static int GetWriteFunction(unsigned devid)
         }
     }
     
-    return 0;
+    assert(FALSE);
+    return -1;
 }
 
 int WriteBackSectors(unsigned devid, int nsects, SECTOR lsect, 
                      void* buffer, unsigned area)
 {
+    int retVal;
     int element = GetWriteFunction(devid);
+    
+    assert((element < WriteFuncPointer) && (WriteFuncs[element].write));
 
-    return (WriteFuncs[element].write(WriteFuncs[element].handle,
-                                      nsects, lsect,
-                                      buffer, area) != -1);
+    if (element >= 0)
+    {        
+	retVal = WriteFuncs[element].write(WriteFuncs[element].handle,
+                                           nsects, lsect,
+                                           buffer, area) != -1; 
+	RETURN_FTEERR(retVal);
+    }
+    
+    assert(FALSE);
+    return FALSE;
 }
-
-
-                                      

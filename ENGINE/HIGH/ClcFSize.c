@@ -38,7 +38,7 @@ unsigned long CalculateFileSize(RDWRHandle handle, CLUSTER firstcluster)
 
    if (!FileTraverseFat(handle, firstcluster, FileSizeCalculator,
                         (void**) &presult))
-      return FAIL;
+      RETURN_FTEERROR(FAIL);
 
    return result;
 }

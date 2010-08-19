@@ -58,28 +58,40 @@ static char tempbuf[255];
 ** Checks all the directory entries in the volume on validity.
 ********************************************************************/
 
+struct Pipe
+{
+	BOOL invalid;
+	BOOL been;
+};
+
 RETVAL CheckDirectoryEntries(RDWRHandle handle)
 {
-    BOOL invalid = FALSE, *pinvalid = &invalid;
+	struct Pipe pipe, *ppipe = &pipe;
+
+	pipe.invalid = FALSE;
+	pipe.been    = FALSE;
 
     switch (PerformRootDirChecks(handle, FALSE))
     {
        case FALSE:
-            invalid = TRUE;
+            pipe.invalid = TRUE;
             break;
             
        case FAIL:
             return ERROR;
     }
     
-    if (!IntelligentWalkDirectoryTree(handle, EntryChecker, (void**) &pinvalid))
+    if (!IntelligentWalkDirectoryTree(handle, EntryChecker, (void**) &ppipe))
        return ERROR;
         
     /* Compress the fast tree map */
-    if (!CompressFastTreeMap(handle))
-       return ERROR;
+	if (pipe.been)
+	{
+		if (!CompressFastTreeMap(handle))
+		   return ERROR;
+	}
        
-    return (invalid) ? FAILED : SUCCESS;
+    return (pipe.invalid) ? FAILED : SUCCESS;
 }
 
 /*******************************************************************
@@ -92,14 +104,15 @@ static BOOL EntryChecker(RDWRHandle handle, struct DirectoryPosition* pos,
 			 struct DirectoryEntry* entry, char* filename,
                          void** structure)
 {
-    BOOL *invalid = *((BOOL**) structure);
+    struct Pipe* pipe = *((struct Pipe**) structure);
 
+	pipe->been = TRUE;
     entry = entry;
 
     switch (LookAtEntry(handle, pos, entry, filename, FALSE))
     {
       case FALSE:
-           *invalid = TRUE;
+           pipe->invalid = TRUE;
       case TRUE:
            return TRUE;
       case FAIL:

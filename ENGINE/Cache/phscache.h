@@ -1,12 +1,12 @@
 #ifndef PHYSICAL_CACHE_H_
 #define PHYSICAL_CACHE_H_
 
-unsigned long InitialisePhysicalCache(void);
+unsigned InitialisePhysicalCache(void);
 void ClosePhysicalCache(void);
-int GetPhysicalMemType(unsigned long physblock);
+int GetPhysicalMemType(unsigned physblock);
 BOOL IsEMSCached(void);
-BOOL RemapXMSBlock(int logblock, unsigned long physblock);
-BOOL RemapEMSBlock(int logblock, unsigned long physblock);
+BOOL RemapXMSBlock(int logblock, unsigned physblock);
+BOOL RemapEMSBlock(int logblock, unsigned physblock);
 
 #define CACHEBLOCKSIZE EMS_PAGE_SIZE
 

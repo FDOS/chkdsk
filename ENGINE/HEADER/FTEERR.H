@@ -15,4 +15,39 @@ int  GetFTEerror   (void);
 void SetFTEerror   (int error);
 void ClearFTEerror (void);
 
+#ifdef NDEBUG
+
+#define RETURN_FTEERR(value) return value;
+#define RETURN_FTEERR1(value, skip) return value;
+#define RETURN_FTEERROR(value) return value;
+
+#else
+
+void TrackFTEError    (int line, char* file);
+BOOL GetFirstFTEError (int* line, char** file);
+BOOL GetNextFTEError  (int* line, char** file);
+void UntrackFTEErrors (void);
+
+#define RETURN_FTEERR(value)              \
+{				          \
+    if (value != TRUE)	                  \
+       TrackFTEError(__LINE__, __FILE__); \
+    return value;		          \
+}
+
+#define RETURN_FTEERR1(value, skip)         \
+{					    \
+    if (value != spil)			    \
+	TrackFTEError(__LINE__, __FILE__);  \
+    return value;			    \
+}
+
+#define RETURN_FTEERROR(value) 		\
+{					\
+    TrackFTEError(__LINE__, __FILE__);  \
+    return value;			\
+}
+
+#endif
+
 #endif

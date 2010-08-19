@@ -1,6 +1,11 @@
 #ifndef FS_INFO_H_
 #define FS_INFO_H_
 
+/*
+	No idea wether microsoft did it on purpose, but this structure seems 
+	to already be aligned to 32bit.
+*/
+
 struct FSInfoStruct
 {
     unsigned long LeadSignature;
@@ -13,8 +18,12 @@ struct FSInfoStruct
     unsigned long TailSignature;
 };
 
+#ifndef __GNUC__
+#ifndef _WIN32
 #if sizeof(struct FSInfoStruct) != BYTESPERSECTOR
 #error Invalid FSInfo structure
+#endif
+#endif
 #endif
 
 

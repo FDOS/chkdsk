@@ -1,7 +1,7 @@
 /*    
    Blkcache.c - sector cache for extended memory (individual blocks).
 
-   Copyright (C) 2002 Imre Leber
+   Copyright (C) 2002, 2004 Imre Leber
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -20,6 +20,8 @@
    If you have any questions, comments, suggestions, or fixes please
    email me at:  imre.leber@worldonline.be
 */
+
+#include <assert.h>
 #include <stdio.h>
 #include <limits.h>
 #include <string.h>
@@ -27,88 +29,105 @@
 #include "fte.h"
 
 #include "logcache.h"
-#include "WrtBack.h"
+#include "wrtback.h"
 
 struct SectorTag 
 {
   SECTOR   sector;
   unsigned devid;
   unsigned age;
-  BOOL     invalidated;  
   BOOL     dirty;
   unsigned area;
   
   char sectordata[BYTESPERSECTOR];
 };
 
+#ifndef NDEBUG
+
+void DBGLogSector(SECTOR sector);
+void DBGLogDelim(char* delim);
+
+unsigned long DBG_HITS   = 0;
+unsigned long DBG_WRITES = 0;
+unsigned long DBG_TOTAL  = 0;
+
+unsigned long DBG_A  = 0;
+unsigned long DBG_B  = 0;
+unsigned long DBG_C  = 0;
+unsigned long DBG_D  = 0;
+
+void DumpCache(void);
+
+#endif
+
 #define TAGSPERBLOCK 31
 #define AMOFTAGSOFFSET 16382
 #define NOTAGFOUND TAGSPERBLOCK * 2
 
-static unsigned long NumberOfPhysicalBlocks;
+static unsigned NumberOfPhysicalBlocks;
 static char* InitialisedField;
 
 static char* DirtyField;
 
 static unsigned LogicalTime = 0;
 
-static void IndicateDirtyBlock(unsigned long block);
-static int MakeBlockClean(unsigned long block);
-static void GetNextDeviceID(unsigned long block, 
+/*static void IndicateDirtyBlock(unsigned block); */
+static int MakeBlockClean(unsigned block);
+static void GetNextDeviceID(unsigned block, 
                             unsigned oldevid, unsigned* newdevid,
-                            BOOL* found);
+			    BOOL* found);
 
-static unsigned long HashBlockNumber(SECTOR sector)
-{
-   return (sector / TAGSPERBLOCK) % NumberOfPhysicalBlocks;
-}
+// Inline some functionality
 
-static BOOL IsBlockInitialised(unsigned long block)
-{
-   return GetBitfieldBit(InitialisedField, block);
-}
+#define HashBlockNumber(sector) \
+        (unsigned)(((sector) / TAGSPERBLOCK) % NumberOfPhysicalBlocks)
+  
+#define IsBlockInitialised(block) \
+        GetBitfieldBit(InitialisedField, (block))
+	
+#define InitialiseBlock(block) \
+	SetBitfieldBit(InitialisedField, (block))
+	
+#define WriteBlockCount(block, fillcount) \
+	(block)[AMOFTAGSOFFSET] = (fillcount)
+	
+#define ReadBlockCount(block) \
+	(block)[AMOFTAGSOFFSET]
+       
+#define IndicateDirtyBlock(block) \
+	SetBitfieldBit(DirtyField, (block))
 
-static void InitialiseBlock(unsigned long block)
-{
-   SetBitfieldBit(InitialisedField, block);
-}
-
-static void WriteBlockCount(char* block, char fillcount)
-{
-   block[AMOFTAGSOFFSET] = fillcount; 
-}
-
-static char ReadBlockCount(char* block)
-{
-   return block[AMOFTAGSOFFSET];
-}
+#define IndicateBlockCleaned(block) \
+	ClearBitfieldBit(DirtyField, (block));  
 
 static void RedistributeAges(char* block)
 {
    char i, tagsused;
    struct SectorTag* tag;
+   
+   assert(block);
       
    tagsused = ReadBlockCount(block);
 
    tag = (struct SectorTag*) block;
    
    for (i = 0; i < tagsused; i++)
-       tag[i].age /= 2;  
+       tag[i].age >>= 3;  
        
-   LogicalTime = UINT_MAX / 2;
+   LogicalTime = UINT_MAX / 8;
 }
 
 static char GetOldestTag(char* block)
 {
-   char i, tagsused, index;
+   char i, index;
    struct SectorTag* tag;
    unsigned min = UINT_MAX;
-      
-   tagsused = ReadBlockCount(block);
    
+   assert(block);
+      
    tag = (struct SectorTag*) block;
    
-   for (i = 0; i < tagsused; i++)
+   for (i = 0; i < TAGSPERBLOCK; i++)
    {
        if ((!tag[i].dirty) && (tag[i].age < min))
        {
@@ -127,13 +146,13 @@ BOOL InitialisePerBlockCaching(void)
 {
    NumberOfPhysicalBlocks = InitialiseLogicalCache();
    if (NumberOfPhysicalBlocks == 0)
-      return FALSE;
+       RETURN_FTEERROR(FALSE);
       
    InitialisedField = CreateBitField(NumberOfPhysicalBlocks);
    if (!InitialisedField)
    {
       CloseLogicalCache();     
-      return FALSE;
+      RETURN_FTEERROR(FALSE); 
    }
    
    DirtyField = CreateBitField(NumberOfPhysicalBlocks);
@@ -141,7 +160,7 @@ BOOL InitialisePerBlockCaching(void)
    {
       DestroyBitfield(InitialisedField);
       CloseLogicalCache();
-      return FALSE;
+      RETURN_FTEERROR(FALSE); 
    }
 
    return TRUE;
@@ -160,8 +179,10 @@ int CacheBlockSector(unsigned devid, SECTOR sector, char* buffer,
    char  tagsused = 0, i, oldest;
    char* logblock;
    struct SectorTag* tag;
-   unsigned long block = HashBlockNumber(sector);
-
+   unsigned block = HashBlockNumber(sector);
+   
+   assert(buffer);
+   
    logblock = EnsureBlockMapped(block);
    if (!logblock) return TRUE;
 
@@ -175,19 +196,34 @@ int CacheBlockSector(unsigned devid, SECTOR sector, char* buffer,
       WriteBlockCount(logblock, 0);
    }
    
-   if (dirty) IndicateDirtyBlock(block);
-   
+   if (dirty) 
+   {
+#ifndef NDEBUG       
+       DBG_TOTAL++; 
+#endif       
+       
+      IndicateDirtyBlock(block);
+   }
+
    /* See wether the sector is already in the cache. */
    tag = (struct SectorTag*) logblock; 
    for (i = 0; i < tagsused; i++)
    {
-       if ((tag[i].sector == sector) && (tag[i].devid == devid) &&
-           (!tag[i].invalidated))
+       if ((tag[i].sector == sector) && (tag[i].devid == devid))
        {
+#ifndef NDEBUG	   
+	  if (dirty) DBG_A++;	
+#endif	   
           /* Update the cache */       
           tag[i].age = LogicalTime++;
           if (tag[i].age == UINT_MAX)
              RedistributeAges(logblock);
+	  
+#ifndef NDEBUG	  
+          if (dirty && tag[i].dirty)
+             DBG_HITS++;
+#endif	  
+	  
           tag[i].dirty = dirty;   
           tag[i].area = area;
           memcpy(tag[i].sectordata, buffer, BYTESPERSECTOR);
@@ -195,35 +231,18 @@ int CacheBlockSector(unsigned devid, SECTOR sector, char* buffer,
        }
    }
    
-   /* If it is not, see wheter there are tags that were previously
-      invalidated. */
-   for (i = 0; i < tagsused; i++)
-   {
-       if (tag[i].invalidated)
-       {
-          tag[i].age = LogicalTime++;
-          if (tag[i].age == UINT_MAX) RedistributeAges(logblock);
-          tag[i].devid = devid;
-          tag[i].sector = sector;
-          tag[i].invalidated = FALSE;
-          tag[i].dirty = dirty;
-          tag[i].area = area;
-          
-          memcpy(tag[i].sectordata, buffer, BYTESPERSECTOR);
-          return TRUE;          
-       }
-   }      
-    
-   /* If none were invalidated, then see wether the cache is already full
-      and add a new tag if possible. */        
+   /* Then see wether the cache is already full and add a new tag if possible. */        
    if (tagsused < TAGSPERBLOCK)
    {
+#ifndef NDEBUG       
+      if (dirty) DBG_C++;       
+#endif
+       
       WriteBlockCount(logblock, tagsused+1);
       tag[tagsused].age = LogicalTime++;
-      if (tag[tagsused].age == UINT_MAX) RedistributeAges(logblock);
+      if (LogicalTime == UINT_MAX) RedistributeAges(logblock);
       tag[tagsused].devid = devid;
       tag[tagsused].sector = sector;
-      tag[tagsused].invalidated = FALSE;
       tag[i].dirty = dirty;
       tag[i].area = area;
 
@@ -235,21 +254,24 @@ int CacheBlockSector(unsigned devid, SECTOR sector, char* buffer,
       with the new data. */
    oldest = GetOldestTag(logblock);
    if (oldest == NOTAGFOUND)
-   {
+   {   
       if (!MakeBlockClean(block))
-         return FALSE;
+         RETURN_FTEERROR(FALSE); 
 
-      oldest = GetOldestTag(logblock); /* Notice that all dirty bits are 
-                                          cleared. */
+      oldest = GetOldestTag(logblock); /* Notice that all dirty bits are */
+      IndicateDirtyBlock(block);       /* cleared. */      
    }
-     
+   
+#ifndef NDEBUG
+   if (dirty) DBG_D++;   
+#endif
+   
    tag[oldest].age = LogicalTime;
    if (tag[oldest].age == UINT_MAX) RedistributeAges(logblock);
    tag[oldest].devid = devid;
    tag[oldest].sector = sector;
-   tag[oldest].invalidated = FALSE;
-   tag[i].dirty = dirty;
-   tag[i].area = area;
+   tag[oldest].dirty = dirty;
+   tag[oldest].area = area;
           
    memcpy(tag[oldest].sectordata, buffer, BYTESPERSECTOR);   
    
@@ -261,21 +283,22 @@ int RetreiveBlockSector(unsigned devid, SECTOR sector, char* buffer)
    struct SectorTag* tag;
    char* logblock;
    char  tagsused = 0, i;
-   unsigned long block = HashBlockNumber(sector);
+   unsigned block = HashBlockNumber(sector);
 
+   assert(buffer);
+   
    if (!IsBlockInitialised(block))
-      return FALSE;
+       return FALSE;
 
    logblock = EnsureBlockMapped(block);
-   if (!logblock) return FALSE;
+   if (!logblock) RETURN_FTEERROR(FALSE); 
 
    tagsused = ReadBlockCount(logblock);
 
    tag = (struct SectorTag*) logblock;
    for (i = 0; i < tagsused; i++)
    {
-       if ((tag[i].sector == sector) && (tag[i].devid == devid) &&
-           (!tag[i].invalidated))
+       if ((tag[i].sector == sector) && (tag[i].devid == devid))
        {     
           tag[i].age = LogicalTime++;
           if (tag[i].age == UINT_MAX) 
@@ -286,7 +309,7 @@ int RetreiveBlockSector(unsigned devid, SECTOR sector, char* buffer)
        }
    }
    
-   return FALSE;
+   return FALSE; // sector not found
 }
 
 void UncacheBlockSector(unsigned devid, SECTOR sector)
@@ -294,8 +317,9 @@ void UncacheBlockSector(unsigned devid, SECTOR sector)
    struct SectorTag* tag;
    char* logblock;
    char  tagsused = 0, i;
-   unsigned long block = HashBlockNumber(sector);
-
+   int   j;
+   unsigned block = HashBlockNumber(sector);
+assert(0);
    if (!IsBlockInitialised(block)) return;
 
    logblock = EnsureBlockMapped(block);
@@ -309,17 +333,26 @@ void UncacheBlockSector(unsigned devid, SECTOR sector)
    tag = (struct SectorTag*) logblock;
    for (i = 0; i < tagsused; i++)
    {
-       if ((tag[i].sector == sector) && (tag[i].devid == devid) &&
-           (!tag[i].invalidated))
+       if ((tag[i].sector == sector) && (tag[i].devid == devid))
        {     
-          tag[i].invalidated = TRUE;
+	   /* Move all the data to the front */
+	   if (i < tagsused - 1)
+	   {
+	      for (j = i+1; j < tagsused; j++)
+	      {
+		  memcpy(&tag[j], &tag[j-1], sizeof(*tag));  		  
+              }
+	   }
+	   
+	   WriteBlockCount(logblock, tagsused+1);	   
+	   break;
        }
    }
 }
 
 void InvalidateBlockCache()
 {
-   unsigned long i;
+   unsigned i;
    
    for (i = 0; i < NumberOfPhysicalBlocks; i++)
    {
@@ -327,19 +360,9 @@ void InvalidateBlockCache()
    }          
 }
 
-static void IndicateDirtyBlock(unsigned long block)
+static unsigned GetNextDirtyBlock(unsigned previous)
 {
-   SetBitfieldBit(DirtyField, block);  
-}
-
-static void IndicateBlockCleaned(unsigned long block)
-{
-   ClearBitfieldBit(DirtyField, block);  
-}
-
-static unsigned long GetNextDirtyBlock(unsigned long previous)
-{
-   unsigned long i;
+   unsigned i;
 
    for (i = previous; i < NumberOfPhysicalBlocks; i++)
    {
@@ -347,7 +370,7 @@ static unsigned long GetNextDirtyBlock(unsigned long previous)
           return i;
    }
    
-   return ULONG_MAX;
+   return UINT_MAX;
 }
 
 int GetFirstDirtyTag(struct SectorTag* tag, unsigned devid)
@@ -355,6 +378,8 @@ int GetFirstDirtyTag(struct SectorTag* tag, unsigned devid)
    int result = NOTAGFOUND;     
    char tagsused, i;
    SECTOR min = ULONG_MAX;
+    
+   assert(tag);
    
    tagsused = ReadBlockCount((char*) tag);
    
@@ -371,37 +396,15 @@ int GetFirstDirtyTag(struct SectorTag* tag, unsigned devid)
    return result;
 }
 
-int GetNextDirtyTag(struct SectorTag* tag, unsigned devid, 
-                    SECTOR prevsector)
-{
-   int result = NOTAGFOUND, i;     
-   char tagsused;
-   SECTOR min = ULONG_MAX;
-   
-   tagsused = ReadBlockCount((char*) tag);
-
-   for (i = 0; i < (int) tagsused; i++)
-   {         
-       if ((tag[i].devid == devid)       && 
-           (tag[i].sector < min)         && 
-           (tag[i].dirty)                &&
-           (tag[i].sector > prevsector))
-       {          
-          result = i;
-          min = tag[i].sector;
-       }
-   }
-
-   return result;
-}
-
-static void GetNextDeviceID(unsigned long block,
+static void GetNextDeviceID(unsigned block,
                             unsigned oldevid, unsigned* newdevid, 
                             BOOL* found)
 {
    struct SectorTag* tag; 
    char tagsused, i;
    unsigned result = UINT_MAX;
+   
+   assert(found && newdevid);
    
    *found = FALSE; 
    
@@ -420,7 +423,7 @@ static void GetNextDeviceID(unsigned long block,
    } 
 }
 
-static int WriteBackBlock(unsigned devid, unsigned long block)
+static int WriteBackBlock(unsigned devid, unsigned block)
 {  
    int tagindex;
    char* WriteBuf;
@@ -436,35 +439,42 @@ static int WriteBackBlock(unsigned devid, unsigned long block)
    {
       if (WriteBuf) FTEFree(WriteBuf);
       CacheIsCorrupt();
-      return FALSE;
+      RETURN_FTEERROR(FALSE); 
    }   
 
    tagindex = GetFirstDirtyTag(tag, devid);
    while (tagindex != NOTAGFOUND)
    {              
       if (!WriteBuf)
-      {           
+      {          
+#ifndef NDEBUG
+         DBG_WRITES++; 
+#endif	  
+	  
          if (!WriteBackSectors(devid, 1, tag[tagindex].sector, 
                                tag[tagindex].sectordata, tag[tagindex].area)) 
          {
-            if (WriteBuf) FTEFree(WriteBuf);
-            CacheIsCorrupt();
-            return FALSE;
+	     if (WriteBuf) FTEFree(WriteBuf);
+             CacheIsCorrupt();
+             RETURN_FTEERROR(FALSE); 
          }
-         prevsector = tag[tagindex].sector;
       }
       else
       {
          if (firstsector &&
              ((prevsector != tag[tagindex].sector-1) || 
               (prevarea != tag[tagindex].area)))    
-         {   
+         { 
+#ifndef NDEBUG	     
+	    DBG_WRITES+=prevsector - firstsector + 1;	     
+#endif
+	     
             if (!WriteBackSectors(devid, (int)(prevsector - firstsector + 1),
                                   firstsector, WriteBuf, prevarea)) 
             {
                 if (WriteBuf) FTEFree(WriteBuf);
                 CacheIsCorrupt();
-                return FALSE;
+                RETURN_FTEERROR(FALSE); 
             }
             
             firstsector = tag[tagindex].sector;
@@ -486,17 +496,22 @@ static int WriteBackBlock(unsigned devid, unsigned long block)
       }
 
       tag[tagindex].dirty = FALSE;     
-      tagindex = GetNextDirtyTag(tag, devid, prevsector);  
+      tagindex = GetFirstDirtyTag(tag, devid);  
    }
    
    if (WriteBuf && firstsector)
    {  
+#ifndef NDEBUG       
+      DBG_WRITES+=prevsector - firstsector + 1;	       
+#endif
+       
       if (!WriteBackSectors(devid, (int)(prevsector - firstsector + 1),
                             firstsector, WriteBuf, prevarea)) 
       {
          if (WriteBuf) FTEFree(WriteBuf);
+	     assert(FALSE);
          CacheIsCorrupt();
-         return FALSE;
+         RETURN_FTEERROR(FALSE); 
       }      
    }
    
@@ -505,7 +520,7 @@ static int WriteBackBlock(unsigned devid, unsigned long block)
    return TRUE;
 }
 
-static int MakeBlockClean(unsigned long block)
+static int MakeBlockClean(unsigned block)
 {
    BOOL found;
    unsigned devid=0;
@@ -514,7 +529,7 @@ static int MakeBlockClean(unsigned long block)
    while (found)
    {      
        if (!WriteBackBlock(devid, block))
-          return FALSE;
+          RETURN_FTEERROR(FALSE); 
            
        GetNextDeviceID(block, devid+1, &devid, &found);  
    }
@@ -524,17 +539,106 @@ static int MakeBlockClean(unsigned long block)
 
 int WriteBackCache(void)
 {
-   unsigned long block;
+   unsigned block;
 
    block = GetNextDirtyBlock(0);
-   
-   while (block != ULONG_MAX)
+       
+   while (block != UINT_MAX)
    {
          if (!MakeBlockClean(block))
-            return FALSE;
+	 {
+	     RETURN_FTEERROR(FALSE); 
+	   
+	 }
          
          block = GetNextDirtyBlock(block+1);
    }
    
+   assert(DBG_A + DBG_B + DBG_C + DBG_D == DBG_TOTAL);
+   assert(DBG_HITS + DBG_WRITES == DBG_TOTAL);
+
+#ifndef NDEBUG
+   
+   DBG_HITS   = 0;
+   DBG_WRITES = 0;
+   DBG_TOTAL  = 0;
+
+   DBG_A  = 0;
+   DBG_B  = 0;
+   DBG_C  = 0;
+   DBG_D  = 0;
+
+#endif
+   
    return TRUE;
 }
+
+#ifndef NDEBUG
+
+void DBGLogSector(SECTOR sector)
+{
+   FILE* fptr = fopen("c:\\defrag.tst", "a+t");
+    
+   if (fptr)
+   {
+      fprintf(fptr, "%lu\n", sector); 
+      
+      fclose(fptr);
+   }    
+}
+
+
+void DBGLogDelim(char* delim)
+{
+   FILE* fptr = fopen("c:\\defrag.tst", "a+t");
+    
+   if (fptr)
+   {
+      fprintf(fptr, "%s\n", delim); 
+      
+      fclose(fptr);
+   }
+}
+
+void DumpCache(void)
+{
+    unsigned i;
+    char tagsused, j;
+     
+    char* logblock;
+    struct SectorTag* tag;   
+	
+    printf("Number of physical blocks: %lu\n", NumberOfPhysicalBlocks);
+    
+    for (i=0; i<NumberOfPhysicalBlocks; i++)
+    {
+	if (IsBlockInitialised(i))
+	{
+	    printf("[-- Block: %lu --]\n", i);
+	    
+	    logblock = EnsureBlockMapped(i);
+            if (!logblock) {printf("Problem\n"); return;}
+		
+	    tagsused = ReadBlockCount(logblock);
+	    
+	    tag = (struct SectorTag*) logblock;
+	    
+	    for (j = 0; j< tagsused; j++)
+	    {		
+	        if (tag[j].dirty)
+		{		
+		   printf("tag:     %d\n",   (int) j);
+		   printf("sector   %lu\n",  tag[j].sector);
+		   printf("devid:   %u\n",   tag[j].devid);
+		   printf("age:     %u\n",   tag[j].age);
+		   //printf("invalid: %d\n",   tag[j].invalidated);
+		   printf("dirty:   %d\n",   tag[j].dirty);
+		   printf("area:    %u\n",   tag[j].area);
+		   printf("\n");
+		}
+            }
+	}	
+    }    
+}
+
+#endif

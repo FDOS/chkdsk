@@ -39,7 +39,8 @@ struct Pipe
 BOOL WalkWildcardPath(RDWRHandle handle, char* path, CLUSTER firstcluster,
                       BOOL (*func)(RDWRHandle handle,
                                    struct DirectoryPosition* pos,
-                                   void** structure), void** structure)
+                                   void** structure), 
+		      void** structure)
 {
    int i, len;
    char* temp;
@@ -70,18 +71,18 @@ BOOL WalkWildcardPath(RDWRHandle handle, char* path, CLUSTER firstcluster,
               return FALSE;
          case FAIL:
               FTEFree(temp);   
-              return FAIL; 
+              RETURN_FTEERROR(FAIL); 
       }
    
       FTEFree(temp);
  
       entry = AllocateDirectoryEntry();
-      if (!entry) return FAIL;
+      if (!entry) RETURN_FTEERROR(FAIL);
    
       if (!GetDirectory(handle, &abspos, entry))
       {
          FreeDirectoryEntry(entry);      
-         return FAIL;   
+         RETURN_FTEERROR(FAIL);
       }    
       
       poscluster = GetFirstCluster(entry);
@@ -91,11 +92,11 @@ BOOL WalkWildcardPath(RDWRHandle handle, char* path, CLUSTER firstcluster,
          return TRUE;
    }
   
-   pipe.wildcard = path+i+1;
+   pipe.wildcard = path+i+1;	/* notice that i may be -1 */
       
    if (!TraverseSubdir(handle, poscluster, WildcardCaller,
                        (void**) &ppipe, TRUE))
-      return FAIL;
+      RETURN_FTEERROR(FAIL);
       
    return TRUE;
 }
@@ -107,12 +108,12 @@ static BOOL WildcardCaller(RDWRHandle handle, struct DirectoryPosition* pos,
    struct DirectoryEntry* entry;
    
    entry = AllocateDirectoryEntry();
-   if (!entry) return FAIL;
+   if (!entry) RETURN_FTEERROR(FAIL);
    
    if (!GetDirectory(handle, pos, entry))
    {
       FreeDirectoryEntry(entry);      
-      return FAIL;   
+      RETURN_FTEERROR(FAIL);   
    }
    
    if (IsLFNEntry(entry)     ||

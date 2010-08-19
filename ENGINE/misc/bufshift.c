@@ -21,6 +21,7 @@
    email me at:  imre.leber@worldonline.be
 */
 
+#include <assert.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -29,6 +30,8 @@ void RotateBufRight(char* begin, char* end, int n)
    int i;     
    char temp;
    char* buf;
+    
+   assert(begin && end);
    
    if (!n) return;
    
@@ -57,6 +60,8 @@ void RotateBufLeft(char* begin, char* end, int n)
    char temp;
    char* buf;     
    
+   assert(begin && end);
+    
    if (!n) return;
    buf = (n == 1)? 0:(char*) malloc(n);
    if (buf)
@@ -83,6 +88,8 @@ void SwapBuffer(char* p1, char* p2, unsigned len)
    char* buf;
    unsigned i;
 
+   assert(p1 && p2); 
+    
    if (!len) return;
    
    buf = (len == 1) ? 0 : (char*) malloc(len);
@@ -109,6 +116,8 @@ static void SlowSwapBufferParts(char* begin1, char* end1,
 {
    unsigned len1, len2, difference;
    
+   assert(begin1 && end1 && begin2 && end2); 
+    
    len1 = (unsigned)(end1-begin1);
    len2 = (unsigned)(end2-begin2);
       
@@ -135,6 +144,9 @@ static void SlowSwapBufferParts(char* begin1, char* end1,
 void SwapBufferParts(char* begin1, char* end1, char* begin2, char* end2)
 {
    char* buf = (char*) malloc((size_t)(end2-begin1)), *buf1 = buf;
+    
+   assert(begin1 && end1 && begin2 && end2);    
+    
    if (buf)
    {
       memcpy(buf, begin2, (size_t)(end2-begin2));
@@ -150,7 +162,7 @@ void SwapBufferParts(char* begin1, char* end1, char* begin2, char* end2)
       SlowSwapBufferParts(begin1, end1, begin2, end2);
    }
 }                               
-                                
+      
 #ifdef TEST_SHIFTBUF
 
 #include <time.h>
@@ -171,7 +183,6 @@ int main()
 	printf("%c", buffer[i]);
     puts("");
 
-
     for (j = 0; j < 10; j++)
     {
 	RotateBufRight(buffer, &buffer[10], j);
@@ -180,6 +191,7 @@ int main()
 	puts("");
     }
 
+    
     time(&t2);
     printf("\n%f\n", difftime(t2, t1));
 
@@ -187,6 +199,7 @@ int main()
     
     clrscr();
 
+    
     for (j = 0; j < 10; j++)
     {
 	RotateBufLeft(buffer, &buffer[10], j);
@@ -194,14 +207,13 @@ int main()
             printf("%c", buffer[i]);
         puts("");
     }
-    
+  
     puts("\n\n");
-    
+  
     SwapBuffer(&buffer[0], &buffer[5], 5);
     for (i = 0; i < 10; i++)
             printf("%c", buffer[i]);
         puts("");
-   
    puts("\n\n");
    
    SwapBuffer(&buffer[0], &buffer[5], 5);
@@ -209,13 +221,21 @@ int main()
             printf("%c", buffer[i]);
         puts("");
         puts("\n\n");
-
+  
    RotateBufLeft(&buffer[0], &buffer[10], 2);
 
+ 
+   
    SlowSwapBufferParts(&buffer[1],  &buffer[5], &buffer[7], &buffer[9]);
    for (i = 0; i < 10; i++)
             printf("%c", buffer[i]);
         puts("");
+      
+   SwapBufferParts(&buffer[1],  &buffer[5], &buffer[7], &buffer[9]);
+   for (i = 0; i < 10; i++)
+            printf("%c", buffer[i]);
+        puts("");
+
     
 }
 

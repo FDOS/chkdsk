@@ -65,7 +65,7 @@ BOOL LocateFilePosition(RDWRHandle handle, CLUSTER firstcluster,
 
    if (!TraverseSubdir(handle, firstcluster, FileLocater,
                        (void**) &ppipe, FALSE))
-      return FAIL;
+      RETURN_FTEERROR(FAIL);
 
    return pipe.found;
 }
@@ -73,36 +73,40 @@ BOOL LocateFilePosition(RDWRHandle handle, CLUSTER firstcluster,
 static BOOL FileLocater(RDWRHandle handle, struct DirectoryPosition* pos,
                         void** structure)
 {
+   BOOL retVal = TRUE;
+    
    struct Pipe* pipe = *((struct Pipe**) structure);
    struct DirectoryEntry* entry;
 
    entry = AllocateDirectoryEntry();
-   if (!entry) return FAIL;
+   if (!entry) RETURN_FTEERROR(FAIL);
 
    if (!GetDirectory(handle, pos, entry))
    {
       FreeDirectoryEntry(entry);
-      return FAIL;
+      RETURN_FTEERROR(FAIL);
    }
 
-   if (IsLastLabel(*entry))
-   {
-      FreeDirectoryEntry(entry);
-      return FAIL;
-   }
-
+   /* 
+   
+       I guess it is safe not to check for validity of the entry.
+   
+       This way we can realy just search about anything!
+      
+   */
+   
+   
    if ((memcmp(pipe->filename, entry->filename, 8) == 0) &&
        (memcmp(pipe->extension, entry->extension, 3) == 0))
    {
       pipe->found  = TRUE;
       memcpy(pipe->result, pos, sizeof(struct DirectoryPosition));
 
-      FreeDirectoryEntry(entry);
-      return FALSE;
+      retVal = FALSE;
    }
 
    FreeDirectoryEntry(entry);
-   return TRUE;
+   return retVal;
 }
 
 /**************************************************************
@@ -161,6 +165,9 @@ BOOL LocateRelPathPosition(RDWRHandle handle, char* relpath,
    if ((relpath[0] == '\\') || (relpath[0] == '/'))
       relpath++;
 
+   entry = AllocateDirectoryEntry();
+   if (!entry) RETURN_FTEERROR(FAIL);   
+   
    while (relpath && relpath[0])
    {
       ConvertUserPath(relpath, filename, extension);
@@ -174,58 +181,41 @@ BOOL LocateRelPathPosition(RDWRHandle handle, char* relpath,
          case TRUE:
               break;
          case FAIL:
-              return FAIL;
+              RETURN_FTEERROR(FAIL);
       }
       
       p1 = strchr(relpath, '\\');
       p2 = strchr(relpath, '/');
 
-      if ((p1 == p2) && (p2 == 0))
+      if ((p1 == p2) && (p2 == 0))	/* If there was no / or \ */
       {
          relpath = strchr(relpath, '0');
-      }
-      if (p1 < p2)
+      }      
+      else if ((!p2) 		||	/* If there was no /, or */ 
+	       ((p1 < p2) && p1))	/* If \ came before / making sure that there was a \ */
       {
-         if (p1)
-         {
-            relpath = p1+1;
-         }
-         else
-         {
-            relpath = p2+1;
-         }
-      }
-      if (p1 > p2)
+	 relpath = p1+1;    	  
+      }      
+      else
       {
-         if (p2)
-         {
-            relpath = p2+1;
-         }
-         else
-         {
-            relpath = p1+1;
-         }
+	 relpath = p2+1;  	  
       }
-
-      entry = AllocateDirectoryEntry();
-      if (!entry) return FAIL;
 
       if (!GetDirectory(handle, &result, entry))
       {
             FreeDirectoryEntry(entry);
-            return FAIL;
+            RETURN_FTEERROR(FAIL);
       }
 
       firstcluster = GetFirstCluster(entry);
-      if (!firstcluster)           /* Invalid entry in file system? */
+      if (!firstcluster)           	/* Invalid entry in file system? */
       {
          FreeDirectoryEntry(entry);
          return FALSE;
       }
-
-      FreeDirectoryEntry(entry);
    }
 
+   FreeDirectoryEntry(entry);
    memcpy(pos, &result, sizeof(struct DirectoryPosition));
    return TRUE;
 }

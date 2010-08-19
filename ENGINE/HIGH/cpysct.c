@@ -38,23 +38,34 @@ BOOL CopySectors(RDWRHandle handle, SECTOR source, SECTOR dest,
     unsigned i;
     BOOL retVal = TRUE;
 
-    sectbuf = (char*) AllocateSector(handle);
-    if (!sectbuf) return FALSE;
-    
-    for (i = 0; i < length; i++)
+    sectbuf = FTEAlloc(length * BYTESPERSECTOR);
+    if (sectbuf)
     {
-        if (!ReadDataSectors(handle, 1, source + i, sectbuf))
-        {
-           retVal = FALSE;
-           break;
-        }
-        if (!WriteDataSectors(handle, 1, dest + i, sectbuf))
-        {
-           retVal = FALSE;
-           break;
-        }
+	if (!ReadDataSectors(handle, length, source, sectbuf) ||
+	    !WriteDataSectors(handle, length, dest, sectbuf))
+	{
+	    retVal = FALSE;
+	}
+	
+	FTEFree(sectbuf);
     }
+    else
+    {
+	sectbuf = (char*) AllocateSector(handle);
+	if (!sectbuf) return FALSE;
+	
+	for (i = 0; i < length; i++)
+	{
+	    if (!ReadDataSectors(handle, 1, source + i, sectbuf) ||
+		!WriteDataSectors(handle, 1, dest + i, sectbuf))
+	    {
+	       retVal = FALSE;
+	       break;
+	    }
+	}
+	
+	FreeSectors((SECTOR*) sectbuf);    
+    }    
     
-    FreeSectors((SECTOR*) sectbuf);
-    return retVal;
+    RETURN_FTEERR(retVal);    
 }

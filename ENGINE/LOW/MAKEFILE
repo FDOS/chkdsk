@@ -45,7 +45,7 @@ fat.obj: fat.c ..\..\misc\bool.h ..\header\rdwrsect.h ..\header\fat.h \
         @$(compiler) $(options) fat.c
 
 fteerr.obj: fteerr.c ..\header\fteerr.h
-        @$(compiler) $(options) fteerr.c
+        $(compiler) $(options) -I..\header -I..\..\misc fteerr.c
 
 subdir.obj: subdir.c ..\header\rdwrsect.h ..\header\direct.h    \
             ..\..\misc\bool.h ..\header\fat.h ..\header\subdir.h \
@@ -82,5 +82,7 @@ clean:
    @-del FSinfo.obj
    @-del lowfat32.obj
    @-del backup.obj
+   @-del lfn.obj
    @-del low.lib
+   @-del volume.obj
    @-del *.bak

@@ -19,19 +19,22 @@
 
    If you have any questions, comments, suggestions, or fixes please
    email me at:  imre.leber@worldonline.be
-*/
-
+*/  
+  
 #include <stdlib.h>
-#include <alloc.h>
 #include <string.h>
-
+  
+#ifdef __BORLANDC__
+#include <alloc.h>
+#endif	
+  
 #include "fte.h"
-
+  
 /*
    Beware of circular references:
 
-fatpos1 = cluster2
-cluster1 = clustervalue2
+	fatpos1 = cluster2
+	cluster1 = clustervalue2
 
        A -> B -> C
       
@@ -50,8 +53,8 @@ cluster1 = clustervalue2
 
 
 
-cluster1 = fatpos2
-clustervalue1 = cluster2
+	cluster1 = fatpos2
+	clustervalue1 = cluster2
 
        A -> B -> C
 
@@ -67,346 +70,331 @@ clustervalue1 = cluster2
 
        B: B      /
        
-*/
-       
-BOOL SwapClusters(RDWRHandle handle, CLUSTER clust1, CLUSTER clust2)
-{
-     BOOL found, IsInFAT1=FALSE, IsInFAT2 = FALSE, error=FALSE;
-     CLUSTER freeclust, clustervalue1, fatpos1, fatpos2;
-     CLUSTER clustervalue2, dircluster1, dircluster2;
-     char sectbuf[BYTESPERSECTOR], far* fpSectBuf = (char far*) sectbuf;
-     unsigned char sectorspercluster, i;
-     SECTOR startsector;
-     struct DirectoryPosition dirpos1, dirpos2;
-     struct DirectoryEntry entry;
-     unsigned long neededmem;
-     void far* MemCluster;
-     BOOL DOTSProcessed1, DOTSProcessed2;
-     SECTOR srcsector, destsector;
-
-     /* First check wether we shouldn't be using RelocateCluster instead. */
-     if (!ReadFatLabel(handle, clust1, &clustervalue1))
-           return FALSE;
-
-     if (!ReadFatLabel(handle, clust2, &clustervalue2))
-           return FALSE;
-
-     if (FAT_FREE(clustervalue1) && (FAT_FREE(clustervalue2)))
-     {
-        return TRUE;
-     }
-
-     if (FAT_FREE(clustervalue1))
-     {
-        if (!RelocateCluster(handle, clust2, clust1))
-           return FALSE;     
-     }
-
-     if (FAT_FREE(clustervalue2))
-     {
-        if (!RelocateCluster(handle, clust1, clust2))
-           return FALSE;     
-     }
-
-     /* See if we have enough memory to load the data for one cluster
-        into memory.                                               */       
-     sectorspercluster = GetSectorsPerCluster(handle);
-     if (!sectorspercluster) return FALSE;
-
-     neededmem = sectorspercluster * BYTESPERSECTOR;
-     MemCluster = farmalloc(neededmem);
-     if (MemCluster)
-     {
-	/* First prepare the first cluster. */
-	/* See where the cluster is refered */
-	/* In FAT? */
-	if (!FindClusterInFAT(handle, clust1, &fatpos1))
+*/ 
+  
+BOOL SwapClusters (RDWRHandle handle, CLUSTER clust1, CLUSTER clust2) 
+{  
+    BOOL found, IsInFAT1 = FALSE, IsInFAT2 = FALSE, error = FALSE;
+    CLUSTER freeclust, clustervalue1, fatpos1, fatpos2;  
+    CLUSTER clustervalue2, dircluster1, dircluster2;  
+    unsigned char sectorspercluster;  
+    SECTOR startsector;
+    struct DirectoryPosition dirpos1, dirpos2;
+    struct DirectoryEntry entry;
+    unsigned long neededmem;
+    void *MemCluster;
+    BOOL DOTSProcessed1, DOTSProcessed2;
+    SECTOR srcsector, destsector;
+  
+    /* First check wether we shouldn't be using RelocateCluster instead. */ 
+    if (!ReadFatLabel (handle, clust1, &clustervalue1))
+	RETURN_FTEERROR(FALSE);
+  
+    if (!ReadFatLabel (handle, clust2, &clustervalue2))    
+	RETURN_FTEERROR(FALSE);
+  
+    if (FAT_FREE (clustervalue1) && (FAT_FREE (clustervalue2)))
+    {
+	return TRUE;
+    }
+  
+    if (FAT_FREE (clustervalue1))
+    {
+	return RelocateCluster (handle, clust2, clust1);
+    }
+	
+    if (FAT_FREE (clustervalue2))
+    {
+	return RelocateCluster (handle, clust1, clust2);
+    }
+  
+    /* See if we have enough memory to load the data for one cluster
+       into memory.                                               */ 
+    sectorspercluster = GetSectorsPerCluster (handle);
+    if (!sectorspercluster)
+	RETURN_FTEERROR(FALSE);
+    neededmem = sectorspercluster * BYTESPERSECTOR;
+    MemCluster = malloc (neededmem);
+    if (MemCluster)
+    {
+	/* First prepare the first cluster. */ 
+	/* See where the cluster is refered */ 
+	/* In FAT? */ 
+	if (!FindClusterInFAT (handle, clust1, &fatpos1))
 	{
-	   farfree(MemCluster);
-	   return FALSE;
+	    free (MemCluster);
+	    RETURN_FTEERROR(FALSE);
 	}
 
-	/* No, then look if this is the first cluster of a file. */
+	/* No, then look if this is the first cluster of a file. */ 
 	if (!fatpos1)
 	{
-	   if (!FindClusterInDirectories(handle, clust1, &dirpos1, &found))
-	   {
-	      farfree(MemCluster);
-	      return FALSE;
-	   }
-           if (!found)
-	   {
-	      farfree(MemCluster);
-              return FALSE;                /* Non valid cluster! */
-           }
-           else
-           {
-	      /*
-                  Special case: if this is the first cluster of a directory
-                                then adjust all the . and .. pointers to 
-                                reflect the new position on the volume.
-              */
-	      if (!GetDirectory(handle, &dirpos1, &entry))
-	      {
-		 farfree(MemCluster);
-		 return FALSE;
-	      }
-	      if (entry.attribute & FA_DIREC)
-	      {
-		 dircluster1 = GetFirstCluster(&entry);
-		 if (!AdaptCurrentAndPreviousDirs(handle, dircluster1, clust2))
-		 {
-		    AdaptCurrentAndPreviousDirs(handle, dircluster1, clust1);
-		    farfree(MemCluster);
-		    return FALSE;
-		 }
-		 DOTSProcessed1 = TRUE;
-	      }
-	   }
+	    if (!FindClusterInDirectories (handle, clust1, &dirpos1, &found))
+	    {
+		free (MemCluster);
+		RETURN_FTEERROR(FALSE);
+	    }
+			
+	    if (!found)
+	    {
+		free (MemCluster);
+		RETURN_FTEERROR(FALSE);	/* Non valid cluster! */
+	    }
+	    else
+	    {
+		/*
+		   Special case: if this is the first cluster of a directory
+		   then adjust all the . and .. pointers to 
+		   reflect the new position on the volume.
+		*/ 
+		if (!GetDirectory (handle, &dirpos1, &entry))
+		{
+		    free (MemCluster);
+		    RETURN_FTEERROR(FALSE);
+		}
+	      
+		if (entry.attribute & FA_DIREC)
+		{
+		    dircluster1 = GetFirstCluster (&entry);
+		  
+		    if (!AdaptCurrentAndPreviousDirs(handle, dircluster1, clust2))
+		    {
+			AdaptCurrentAndPreviousDirs (handle, dircluster1,
+						     clust1);
+			free (MemCluster);
+			RETURN_FTEERROR(FALSE);
+		    }
+		    DOTSProcessed1 = TRUE;
+		}	    
+	    }	
 	}
 	else
 	{
-	   IsInFAT1 = TRUE;
+	    IsInFAT1 = TRUE;
 	}
-
-	/* Then prepare the second cluster. */
-
-	/* See where the cluster is refered */
-	/* In FAT? */
-	if (!FindClusterInFAT(handle, clust2, &fatpos2))
+      
+	/* Then prepare the second cluster. */ 
+	/* See where the cluster is refered */ 
+	/* In FAT? */ 
+	if (!FindClusterInFAT (handle, clust2, &fatpos2))
 	{
-	   if (DOTSProcessed1)
-              AdaptCurrentAndPreviousDirs(handle, dircluster1, clust1);
+	    if (DOTSProcessed1)
+		AdaptCurrentAndPreviousDirs (handle, dircluster1, clust1);
 
-	   farfree(MemCluster);
-	   return FALSE;
-	}
-
-        /* No, then look if this is the first cluster of a file. */
-	if (!fatpos2)
-	{
-	   if (!FindClusterInDirectories(handle, clust2, &dirpos2, &found))
-	   {
-	      if (DOTSProcessed1)
-                 AdaptCurrentAndPreviousDirs(handle, dircluster1, clust1);
-
-	      farfree(MemCluster);
-	      return FALSE;
-	   }
-
-	   if (!found)
-	   {
-	      if (DOTSProcessed1)
-                 AdaptCurrentAndPreviousDirs(handle, dircluster1, clust1);
-
-	      farfree(MemCluster);
-              return FALSE;                /* Non valid cluster! */
-           }
-           else
-           {
-	      /*
-                  Special case: if this is the first cluster of a directory
-                                then adjust all the . and .. pointers to 
-                                reflect the new position on the volume.
-              */
-	      if (!GetDirectory(handle, &dirpos2, &entry))
-	      {
-		 if (DOTSProcessed1)
-		    AdaptCurrentAndPreviousDirs(handle, dircluster1, clust1);
-
-		 farfree(MemCluster);
-		 return FALSE;
-	      }
-
-	      if (entry.attribute & FA_DIREC)
-	      {
-		 dircluster2 = GetFirstCluster(&entry);
-		 if (!AdaptCurrentAndPreviousDirs(handle, dircluster2, clust1))
-		 {
-		    AdaptCurrentAndPreviousDirs(handle, dircluster2, clust2);
-		    AdaptCurrentAndPreviousDirs(handle, dircluster1, clust1);
-
-		    farfree(MemCluster);
-		    return FALSE;
-		 }
-		 DOTSProcessed2 = TRUE;
-	      }
-	   }
+		free (MemCluster);
+		RETURN_FTEERROR(FALSE);
+	    }
+      
+	    /* No, then look if this is the first cluster of a file. */ 
+	    if (!fatpos2)
+	    {
+		if (!FindClusterInDirectories (handle, clust2, &dirpos2, &found))
+		{
+		    if (DOTSProcessed1)
+			AdaptCurrentAndPreviousDirs (handle, dircluster1, clust1);
+	      
+		    free (MemCluster);
+		    RETURN_FTEERROR(FALSE);
+		}
+	  
+		if (!found)
+		{
+		    if (DOTSProcessed1)
+			AdaptCurrentAndPreviousDirs (handle, dircluster1, clust1);
+	      
+		    free (MemCluster);
+		    RETURN_FTEERROR(FALSE);	/* Non valid cluster! */
+		}
+		else
+		{
+		    /*
+			Special case: if this is the first cluster of a directory
+			then adjust all the . and .. pointers to 
+			reflect the new position on the volume.
+		    */ 
+		    if (!GetDirectory (handle, &dirpos2, &entry))
+		    {
+			if (DOTSProcessed1)
+			    AdaptCurrentAndPreviousDirs (handle, dircluster1,
+							 clust1);
+		  
+			free (MemCluster);
+			RETURN_FTEERROR(FALSE);
+		    }
+	      
+		    if (entry.attribute & FA_DIREC)
+		    {
+			dircluster2 = GetFirstCluster (&entry);
+		  
+			if (!AdaptCurrentAndPreviousDirs(handle, dircluster2, clust1))
+			{
+			    AdaptCurrentAndPreviousDirs (handle, dircluster2, clust2);
+		      
+			    AdaptCurrentAndPreviousDirs (handle, dircluster1, clust1);
+		      
+			    free (MemCluster);
+			    RETURN_FTEERROR(FALSE);
+			}
+			DOTSProcessed2 = TRUE;
+		    }
+		}
 	}
 	else
 	{
-	   IsInFAT2 = TRUE;
+	    IsInFAT2 = TRUE;
 	}
-
-	startsector = ConvertToDataSector(handle, clust1);
+      
+	startsector = ConvertToDataSector (handle, clust1);
 	if (!startsector)
 	{
-	   if (DOTSProcessed1)
-	      AdaptCurrentAndPreviousDirs(handle, dircluster1, clust1);
-
-	   if (DOTSProcessed2)
-              AdaptCurrentAndPreviousDirs(handle, dircluster2, clust2);
-
-	   farfree(MemCluster);
-	   return FALSE;
+	    if (DOTSProcessed1)
+		AdaptCurrentAndPreviousDirs (handle, dircluster1, clust1);
+	  
+	    if (DOTSProcessed2)
+		AdaptCurrentAndPreviousDirs (handle, dircluster2, clust2);
+	
+	    free (MemCluster);
+	    RETURN_FTEERROR(FALSE);
 	}
-
-	/* Then copy the data of the second cluster to the new position */
-	/* Copy all sectors in this cluster to the new position */
-	srcsector = ConvertToDataSector(handle, clust2);
+      
+	/* Then copy the data of the second cluster to the new position */ 
+	/* Copy all sectors in this cluster to the new position */ 
+	srcsector = ConvertToDataSector (handle, clust2);      
 	if (!srcsector)
 	{
-	   if (DOTSProcessed1)
-	      AdaptCurrentAndPreviousDirs(handle, dircluster1, clust1);
-	   if (DOTSProcessed2)
-              AdaptCurrentAndPreviousDirs(handle, dircluster2, clust2);
-
-	   farfree(MemCluster);
-           return FALSE;
+	    if (DOTSProcessed1)
+		AdaptCurrentAndPreviousDirs (handle, dircluster1, clust1);
+	  
+	    if (DOTSProcessed2)
+		AdaptCurrentAndPreviousDirs (handle, dircluster2, clust2);
+	  
+	    free (MemCluster);
+	    RETURN_FTEERROR(FALSE);
 	}
-
-	destsector = ConvertToDataSector(handle, clust1);
+      
+	destsector = ConvertToDataSector (handle, clust1);
 	if (!startsector)
 	{
-	   if (DOTSProcessed1)
-	      AdaptCurrentAndPreviousDirs(handle, dircluster1, clust1);
-	   if (DOTSProcessed2)
-              AdaptCurrentAndPreviousDirs(handle, dircluster2, clust2);
-
-	   farfree(MemCluster);
-           return FALSE;
-        }
-
+	    if (DOTSProcessed1)
+		AdaptCurrentAndPreviousDirs (handle, dircluster1, clust1);
+	  
+	    if (DOTSProcessed2)
+		AdaptCurrentAndPreviousDirs (handle, dircluster2, clust2);
+	  
+	    free (MemCluster);
+	    RETURN_FTEERROR(FALSE);
+	}
+      
 	/* AS OF THIS POINT WE WILL NOT BE ABLE TO BACKTRACK,
-           THEREFORE WE KEEP ON GOING EVEN IF THERE WERE ERRORS. */  
-
+	   THEREFORE WE KEEP ON GOING EVEN IF THERE WERE ERRORS. */ 
 	/* Change the pointers of the first cluster that has to be moved
-           to the second cluster. */
-        /* Write the entry in the FAT */
-        if (clust2 == clustervalue1)               /* Beware of circular references */
-        {     
-           if (!WriteFatLabel(handle, clust2, clust1))
-              error = TRUE;                
-        }
-        else
-        {
-           if (!WriteFatLabel(handle, clust2, clustervalue1))
-              error = TRUE;
-        }
-
-	/* Adjust the pointer to the relocated cluster */
-	if (IsInFAT1) /* the previous one in the file */
+	   to the second cluster. */ 
+	/* Write the entry in the FAT */ 
+	if (clust2 == clustervalue1)	/* Beware of circular references */
 	{
-           if (fatpos1 != clust2)       /* Beware of circular references */
-           {
-	      if (!WriteFatLabel(handle, fatpos1, clust2))
-	         error = TRUE;
-           }
+	    if (!WriteFatLabel (handle, clust2, clust1))
+		error = TRUE;
 	}
-	else      /* or the directory entry to the file */
+	else
 	{
-	   if (!GetDirectory(handle, &dirpos1, &entry))
-	      error = TRUE;
-
-           if (GetFirstCluster(&entry) != clust2)   
-           {   
-	      SetFirstCluster(clust2, &entry);
-	      if (!WriteDirectory(handle, &dirpos1, &entry))
-	         error = TRUE;
-           }
+	    if (!WriteFatLabel (handle, clust2, clustervalue1))
+		error = TRUE;
 	}
-
-	/* Change the pointers of the second cluster that has to be moved
-	   to the first cluster. */
-	/* Write the entry in the FAT */
-        if (clust1 == clustervalue2)           /* Beware of circular references */
-        {
-	   if (!WriteFatLabel(handle, clust1, clustervalue1))
-	      error = TRUE;
-        }
-        else
-        {
-	   if (!WriteFatLabel(handle, clust1, clustervalue2))
-	      error = TRUE;        
-        }
-
-	/* Adjust the pointer to the relocated cluster */
-	if (IsInFAT2)      /* the previous one in the file */
+      
+	/* Adjust the pointer to the relocated cluster */ 
+	if (IsInFAT1)		/* the previous one in the file */
 	{
-           if (fatpos2 != clust1)                  /* Beware of circular references */
-           {        
-	      if (!WriteFatLabel(handle, fatpos2, clust1))
-	         error = TRUE;
-           }
-	}
-	else              /* or the directory entry to the file */
-	{
-	   if (!GetDirectory(handle, &dirpos2, &entry))
-	      error = TRUE;
-
-           if (GetFirstCluster(&entry) != clust1)    /* Beware of circular references */
-           {
-	      SetFirstCluster(clust1, &entry);
-	      if (!WriteDirectory(handle, &dirpos2, &entry))
-	         error = TRUE;
-           }
-	}
-
-	for (i = 0; i < sectorspercluster; i++)
-	{
-	    if (!ReadDataSectors(handle, 1, startsector+i, sectbuf))
+	    if (fatpos1 != clust2)	/* Beware of circular references */
 	    {
-	       error = TRUE;
+		if (!WriteFatLabel (handle, fatpos1, clust2))
+		    error = TRUE;
 	    }
-
-	    movedata(FP_SEG(fpSectBuf), FP_OFF(fpSectBuf),
-		     FP_SEG(MemCluster), FP_OFF(MemCluster)+i*BYTESPERSECTOR,
-		     BYTESPERSECTOR);
 	}
-
-        if (!CopySectors(handle, srcsector, destsector, sectorspercluster))
-        {
-	   error = TRUE;
-	}
-
-	/* Move the data of the first cluster to the new position. */
-	startsector = ConvertToDataSector(handle, clust2);
-        for (i = 0; i < sectorspercluster; i++)
+	else			/* or the directory entry to the file */
 	{
-	    movedata(FP_SEG(MemCluster), FP_OFF(MemCluster)+i*BYTESPERSECTOR,
-		     FP_SEG(fpSectBuf), FP_OFF(fpSectBuf),
-		     BYTESPERSECTOR);
-
-	    if (!WriteDataSectors(handle, 1, startsector+i, sectbuf))
-	       error = TRUE; /* Salvage what can be salvaged, i.e.
-				go on with moving everything. Everything
-				that is lost is lost.                    */
+	    if (!GetDirectory (handle, &dirpos1, &entry))
+		error = TRUE;
+	    if (GetFirstCluster (&entry) != clust2)
+	    {
+		SetFirstCluster (clust2, &entry);
+		if (!WriteDirectory (handle, &dirpos1, &entry))
+		    error = TRUE;
+	    }
 	}
-
-        /* Free the memory and return */
-	farfree(MemCluster);
-
-        if (error) return FALSE;
-     }
-     else
-     {
-        if (!FindLastFreeCluster(handle, &freeclust))
-           return FALSE;
-       
-        if (!freeclust)
-        {
-           SetFTEerror(FTE_MEM_INSUFFICIENT);     
-           return FALSE;
-        }
-        if (!RelocateCluster(handle, clust1, freeclust))
-           return FALSE;
-          
-        if (!RelocateCluster(handle, clust2, clust1))
-           return FALSE;
-        
-        if (!RelocateCluster(handle, freeclust, clust1))
-           return FALSE;
-     }
-     
-     return TRUE;
+      
+	/* Change the pointers of the second cluster that has to be moved
+	   to the first cluster. */ 
+	/* Write the entry in the FAT */ 
+	if (clust1 == clustervalue2)	/* Beware of circular references */
+	{
+	    if (!WriteFatLabel (handle, clust1, clustervalue1))
+		error = TRUE;
+	}
+	else
+	{
+	    if (!WriteFatLabel (handle, clust1, clustervalue2))
+		error = TRUE;
+	}
+      
+	/* Adjust the pointer to the relocated cluster */ 
+	if (IsInFAT2)		/* the previous one in the file */
+	{
+	    if (fatpos2 != clust1)	/* Beware of circular references */
+	    {
+		if (!WriteFatLabel (handle, fatpos2, clust1))
+		    error = TRUE;
+	    }
+	}
+	else			/* or the directory entry to the file */
+	{
+	    if (!GetDirectory (handle, &dirpos2, &entry))
+		error = TRUE;
+	  
+	    if (GetFirstCluster (&entry) != clust1)	/* Beware of circular references */
+	    {
+		SetFirstCluster (clust1, &entry);
+		if (!WriteDirectory (handle, &dirpos2, &entry))
+		    error = TRUE;
+	    }
+	}
+      	
+	/* Read the cluster data in memory */
+	if (!ReadDataSectors (handle, sectorspercluster, startsector, MemCluster))
+	    error = TRUE;
+		
+	if (!CopySectors (handle, srcsector, destsector, sectorspercluster))
+	    error = TRUE;
+      
+	/* Move the data of the first cluster to the new position. */ 
+	startsector = ConvertToDataSector (handle, clust2);
+	if (!WriteDataSectors(handle, sectorspercluster, startsector, MemCluster))
+	    error = TRUE;       /* Salvage what can be salvaged, i.e.
+				   go on with moving everything. Everything
+				   that is lost is lost.                    */
+		
+	/* Free the memory and return */ 
+	free (MemCluster);
+	
+	if (error)
+	    RETURN_FTEERROR(FALSE);
+    }
+    else
+    {
+	if (!FindLastFreeCluster (handle, &freeclust))
+	    RETURN_FTEERROR(FALSE);
+	if (!freeclust)
+	{
+	    SetFTEerror (FTE_MEM_INSUFFICIENT);
+	    RETURN_FTEERROR(FALSE);
+	}
+      
+	if (!RelocateCluster (handle, clust1, freeclust))
+	    RETURN_FTEERROR(FALSE);
+	if (!RelocateCluster (handle, clust2, clust1))
+	    RETURN_FTEERROR(FALSE);
+	if (!RelocateCluster (handle, freeclust, clust1))
+	    RETURN_FTEERROR(FALSE);
+    }
+  
+    return TRUE;
 }

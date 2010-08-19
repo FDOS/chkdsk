@@ -32,9 +32,7 @@ struct Pipe
 {
    CLUSTER tofind;
    struct DirectoryPosition* pos;
-   BOOL found;
-   
-   BOOL error;
+   BOOL* found;
 };
 
 static BOOL ClusterInDirectoryFinder(RDWRHandle handle,
@@ -47,35 +45,212 @@ static BOOL ClusterInDirectoryFinder(RDWRHandle handle,
 ** Goes through all the directories on the volume and returns
 ** the position of the directory entry of the file that starts
 ** at the given cluster.
+**				     
+** If the entry was not found, pos is not changed.				     				     
 ***************************************************************/
+
+static VFSArray table;
+static VirtualDirectoryEntry* ClustersInDirectoriesMap;
+static BOOL initialised = FALSE;
+
+static BOOL CreateDirReferedTable(RDWRHandle handle)
+{    
+    unsigned long labelsinfat;
+
+    labelsinfat = GetLabelsInFat(handle);
+    if (!labelsinfat) return FALSE;
+
+    if (!CreateVFSArray(handle, labelsinfat, sizeof(struct DirectoryPosition), &table))
+       return FALSE;
+
+    ClustersInDirectoriesMap = CreateVFSBitField(handle, labelsinfat);
+    if (!ClustersInDirectoriesMap) return FALSE;
+
+    if (!WalkDirectoryTree(handle, ClusterInDirectoryFinder, (void**)0))
+       RETURN_FTEERROR(FALSE);
+
+    return TRUE;
+}
+
+void DestroyDirReferedTable()
+{
+    if (initialised)
+    {
+        DestroyVFSArray(&table);
+        DestroyVFSBitfield(ClustersInDirectoriesMap);
+        table.entry = 0;
+    }
+
+    initialised = FALSE;
+}
+
+static BOOL ClusterInDirectoryFinder(RDWRHandle handle,
+                                     struct DirectoryPosition* pos,
+                                     void** structure)
+{
+   CLUSTER firstcluster, cluster;
+   struct DirectoryEntry* entry;
+      
+   entry = AllocateDirectoryEntry();
+   if (!entry)
+   {        
+      RETURN_FTEERROR(FAIL);
+   }
+   
+   switch (IsRootDirPosition(handle, pos))
+   {
+   case FALSE:
+        cluster = DataSectorToCluster(handle, pos->sector);
+        if (!SetVFSBitfieldBit(ClustersInDirectoriesMap, cluster))
+            RETURN_FTEERROR(FAIL);
+        break;
+   case -1:
+        RETURN_FTEERROR(FAIL);
+   }
+
+   if (!GetDirectory(handle, pos, entry))
+   {
+      FreeDirectoryEntry(entry);
+      RETURN_FTEERROR(FAIL);
+   }
+      
+   if (!IsLFNEntry(entry)     &&
+       !IsCurrentDir(*entry)  &&
+       !IsPreviousDir(*entry) &&
+       !IsDeletedLabel(*entry))
+   {   
+      firstcluster = GetFirstCluster(entry);
+   
+      if (!SetVFSArray(&table, firstcluster, (char*)pos))
+      {
+	 FreeDirectoryEntry(entry);
+ 	 return FAIL;   
+      }
+   }
+   
+   FreeDirectoryEntry(entry);
+   return TRUE;
+}          
+
+BOOL FindClusterInDirectories(RDWRHandle handle, CLUSTER tofind, 
+                              struct DirectoryPosition* result,
+                              BOOL* found)
+{
+    struct DirectoryPosition pos;
+    if (!initialised) 
+    {
+	if (!CreateDirReferedTable(handle))
+	    return FALSE;
+
+	initialised = TRUE;
+    }
+    
+    if (!GetVFSArray(&table, tofind, (char*)&pos))
+	return FALSE;
+
+    if ((pos.offset == 0) && (pos.sector == 0))
+	*found = FALSE;
+    else
+    {
+        *found = TRUE;
+	memcpy(result, &pos, sizeof(struct DirectoryPosition));
+    }
+
+    return TRUE;    
+}
+
+BOOL IndicateDirEntryMoved(CLUSTER source, CLUSTER destination)
+{
+    struct DirectoryPosition pointer;
+
+    if (!GetVFSArray(&table, source, (char*)&pointer))
+	return FALSE;
+
+    if (!SetVFSArray(&table, destination, (char*)&pointer))
+	return FALSE;
+
+    memset(&pointer, 0, sizeof(pointer));
+
+    if (!SetVFSArray(&table, source, (char*)&pointer))
+	return FALSE;
+
+    return TRUE;
+}
+
+BOOL IndicateDirClusterMoved(RDWRHandle handle, CLUSTER source, CLUSTER destination)
+{
+   /* See wether the source is in a directory and if it is, go through
+      the table, changing every sector in the source cluster to 
+      a sector in the destination cluster                              
+   
+      Don't forget to change the map itself!
+   */	
+  
+   BOOL isIn=FALSE;
+   unsigned long sectorspercluster, i;
+   SECTOR sourcesector, destsector;
+   unsigned long labelsinfat;
+   struct DirectoryPosition pos;
+
+   if (ClustersInDirectoriesMap)
+   {
+      if (!GetVFSBitfieldBit(ClustersInDirectoriesMap, source, &isIn))
+          return FALSE;
+   }
+
+   if (isIn)
+   {
+       sectorspercluster = GetSectorsPerCluster(handle);
+       if (!sectorspercluster) return FALSE;
+
+       sourcesector = ConvertToDataSector(handle, source);
+       if (!sourcesector) return FALSE;
+   
+       destsector = ConvertToDataSector(handle, destination);
+       if (!destsector) return FALSE;
+   
+       labelsinfat = GetLabelsInFat(handle);
+       if (!labelsinfat) return FALSE;
+
+       for (i=0; i < labelsinfat; i++)
+       {
+           if (!GetVFSArray(&table, i, (char*)&pos))
+	      return FALSE;
+
+           if ((pos.sector >= sourcesector) && (pos.sector < sourcesector+sectorspercluster))
+           {
+              pos.sector = destsector + pos.sector - sourcesector; 
+
+              if (!SetVFSArray(&table, i, (char*)&pos))
+	         return FALSE;
+           }
+       }
+
+       if (!ClearVFSBitfieldBit(ClustersInDirectoriesMap, source))
+           return FALSE;
+       if (!SetVFSBitfieldBit(ClustersInDirectoriesMap, destination))
+           return FALSE;
+   }
+
+   return TRUE;
+}
+
+#if 0
 
 BOOL FindClusterInDirectories(RDWRHandle handle, CLUSTER tofind, 
                               struct DirectoryPosition* result,
                               BOOL* found)
 {
   struct Pipe pipe, *ppipe = &pipe;
-  struct DirectoryPosition pos;
   
   pipe.tofind = tofind;
-  pipe.pos    = &pos;
-  pipe.found  = FALSE;
+  pipe.pos    = result;
+  pipe.found  = found; 
   
-  pipe.error  = FALSE;
-
+  *found = FALSE;
   if (!WalkDirectoryTree(handle, ClusterInDirectoryFinder, (void**)&ppipe))
-     return FALSE;
-
-  if (pipe.error)
-     return FALSE;
+     RETURN_FTEERROR(FALSE);
   
-  if (!pipe.found)
-     *found = FALSE;
-  else
-  {
-     memcpy(result, &pos, sizeof(struct DirectoryPosition));
-     *found = TRUE;
-  }
-     
   return TRUE;
 }
 
@@ -90,15 +265,13 @@ static BOOL ClusterInDirectoryFinder(RDWRHandle handle,
    entry = AllocateDirectoryEntry();
    if (!entry)
    {        
-      pipe->error = TRUE;
-      return FALSE;  
+      RETURN_FTEERROR(FAIL);
    }
    
    if (!GetDirectory(handle, pos, entry))
    {
-      pipe->error = TRUE;
       FreeDirectoryEntry(entry);
-      return FALSE;
+      RETURN_FTEERROR(FAIL);
    }
       
    if (!IsLFNEntry(entry)     &&
@@ -111,7 +284,7 @@ static BOOL ClusterInDirectoryFinder(RDWRHandle handle,
       if (pipe->tofind == firstcluster)
       {
 	 memcpy(pipe->pos, pos, sizeof(struct DirectoryPosition));
-         pipe->found  = TRUE;
+         *(pipe->found)  = TRUE;
          FreeDirectoryEntry(entry);
          return FALSE;
       }
@@ -119,5 +292,7 @@ static BOOL ClusterInDirectoryFinder(RDWRHandle handle,
    
    FreeDirectoryEntry(entry);
    return TRUE;
-}                              
+}          
+
                               
+#endif

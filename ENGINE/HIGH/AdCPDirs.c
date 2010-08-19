@@ -32,12 +32,6 @@ static BOOL PreviousDirAdaptor(RDWRHandle handle,
                                struct DirectoryPosition* pos,
                                void** structure);
 
-
-struct Pipe
-{
-   CLUSTER newcluster;
-};
-
 /*
 ** This function adapts the first cluster of '.' and '..' entries to
 ** a change of the first cluster of a directory to a different place.
@@ -49,12 +43,10 @@ BOOL AdaptCurrentAndPreviousDirs(RDWRHandle handle,
                                  CLUSTER oldcluster,
                                  CLUSTER newcluster)
 {
-   struct Pipe pipe, *ppipe = &pipe;
-
-   pipe.newcluster = newcluster;
-
+   CLUSTER* pcluster = &newcluster;
+    
    return TraverseSubdir(handle, oldcluster, DirectoryAdaptor,
-                         (void**) &ppipe, TRUE);
+                         (void**) &pcluster, TRUE);
 }
 
 static BOOL DirectoryAdaptor(RDWRHandle handle,
@@ -62,15 +54,15 @@ static BOOL DirectoryAdaptor(RDWRHandle handle,
                              void** structure)
 {
      struct DirectoryEntry* entry;
-     struct Pipe* pipe = *((struct Pipe**) structure);
-
+     CLUSTER newcluster = **((CLUSTER**) structure);
+     
      entry = AllocateDirectoryEntry();
-     if (!entry) return FAIL;
+     if (!entry) RETURN_FTEERROR(FAIL);
 
      if (!GetDirectory(handle, pos, entry))
      {
         FreeDirectoryEntry(entry);     
-        return FAIL;
+        RETURN_FTEERROR(FAIL);
      }
 
      if ((IsLFNEntry(entry)) || IsDeletedLabel(*entry))
@@ -83,11 +75,11 @@ static BOOL DirectoryAdaptor(RDWRHandle handle,
      {
         if (IsCurrentDir(*entry))
         {
-           SetFirstCluster(pipe->newcluster, entry);
+           SetFirstCluster(newcluster, entry);
            if (!WriteDirectory(handle, pos, entry))
            {
               FreeDirectoryEntry(entry);
-              return FAIL;
+              RETURN_FTEERROR(FAIL);
            }
         }
         else
@@ -99,7 +91,7 @@ static BOOL DirectoryAdaptor(RDWRHandle handle,
                                   PreviousDirAdaptor, structure, TRUE))
               {
                  FreeDirectoryEntry(entry);
-                 return FAIL;
+                 RETURN_FTEERROR(FAIL);
               }
            }
         }
@@ -113,19 +105,20 @@ static BOOL PreviousDirAdaptor(RDWRHandle handle,
                                struct DirectoryPosition* pos,
                                void** structure)
 {
+     BOOL retVal=TRUE;
      struct DirectoryEntry* entry;
-     struct Pipe* pipe = *((struct Pipe**) structure);
+     CLUSTER newcluster = **((CLUSTER**) structure);
 
      entry = AllocateDirectoryEntry();
-     if (!entry) return FAIL;
+     if (!entry) RETURN_FTEERROR(FAIL);
 
      if (!GetDirectory(handle, pos, entry))
      {
         FreeDirectoryEntry(entry);     
-        return FAIL;
+        RETURN_FTEERROR(FAIL);
      }
 
-     if (IsLFNEntry(entry))
+     if (IsLFNEntry(entry) || IsDeletedLabel(*entry))
      {
         FreeDirectoryEntry(entry);     
         return TRUE;
@@ -133,18 +126,22 @@ static BOOL PreviousDirAdaptor(RDWRHandle handle,
 
      if (IsPreviousDir(*entry))
      {
-        SetFirstCluster(pipe->newcluster, entry);
+        SetFirstCluster(newcluster, entry);
         if (!WriteDirectory(handle, pos, entry))
-        {
-           FreeDirectoryEntry(entry);
-           return FAIL;
+        {        
+           retVal = FAIL;
         }
-
-        FreeDirectoryEntry(entry);
-        return FALSE;
+	else
+	{        
+	   retVal = FALSE;
+	}
      }
      
      FreeDirectoryEntry(entry);
-     return TRUE;
+  
+     if (retVal == FAIL)
+	 RETURN_FTEERROR(FAIL);
+     
+     return retVal;     
 }
 

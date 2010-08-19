@@ -21,14 +21,22 @@
    email me at:  imre.leber@worldonline.be
 */
 
+#include <assert.h>
 #include <string.h>
+
+#ifdef __BORLANDC__
 #include <dir.h>
+#else
+#define MAXPATH 80
+#endif
 
 #include "fte.h"
 
 BOOL GetPreviousDir(char* direct)
 {
    char *p, *q, *r;
+    
+   assert(direct);
    
    p = strrchr(direct, '/');    /* Get the last '/' */
    q = strrchr(direct, '\\');   /* Get the last '\' */
@@ -59,6 +67,8 @@ BOOL GetPreviousDir(char* direct)
 
 static char* SkipDots(char* relative)
 {
+    assert(relative);
+    
     while (relative[0] == '.' && 
                ((relative[1] == '/') || (relative[1] == '\\')))
           relative += 2;
@@ -83,6 +93,8 @@ BOOL MakeAbsolutePath(char* workingdir, char* relative, char* result)
 {
     char* rel = relative;
     char* temp;
+    
+    assert(workingdir && relative && result);
       
     if ((relative[0] == '/') || (relative[0] == '\\'))
     {
@@ -91,7 +103,7 @@ BOOL MakeAbsolutePath(char* workingdir, char* relative, char* result)
     }
     
     strcpy(result, workingdir);
-    if (workingdir[0] == 0) return FALSE;
+    if (workingdir[0] == 0) RETURN_FTEERROR(FALSE);	
     
     temp = strchr(result, 0);
     if ((*(temp-1) != '/') && (*(temp-1) != '\\'))
@@ -100,13 +112,13 @@ BOOL MakeAbsolutePath(char* workingdir, char* relative, char* result)
     while ((temp = SkipDots(rel)) != NULL)
     {
        if (!GetPreviousDir(result)) 
-          return FALSE;     
+          RETURN_FTEERROR(FALSE);	     
           
        rel = temp;   
     }
 
     if ((strlen(result) + strlen(rel)) > MAXPATH)
-       return FALSE;
+       RETURN_FTEERROR(FALSE);	
        
     strcat(result, rel);
     

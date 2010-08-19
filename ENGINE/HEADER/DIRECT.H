@@ -1,32 +1,51 @@
 #ifndef DIRECT_H_
 #define DIRECT_H_
 
+#ifndef __GNUC__
 #include <dos.h>
+#endif
+
 #include <time.h>
 
-#include "..\..\engine\header\rdwrsect.h"
-#include "..\..\engine\header\fat.h"
+#include "../../engine/header/rdwrsect.h"
+#include "../../engine/header/fat.h"
 
 struct PackedDate
 {
-       unsigned day:   5;
-       unsigned month: 4;
-       unsigned year:  7;
-};
+       unsigned short day:   5;
+       unsigned short month: 4;
+       unsigned short year:  7;
+}
+#ifdef __GNUC__
+__attribute__((packed))
+#endif
+;
 
+#ifndef __GNUC__
+#ifndef _WIN32
 #if sizeof(struct PackedDate) != 2
 #error Wrong Packed Date Size
+#endif
+#endif
 #endif
 
 struct PackedTime
 {
-       unsigned second: 5;
-       unsigned minute: 6;
-       unsigned hours:  5;
-};
+       unsigned short second: 5;
+       unsigned short minute: 6;
+       unsigned short hours:  5;
+}
+#ifdef __GNUC__
+__attribute__((packed))
+#endif
+;
 
+#ifndef __GNUC__
+#ifndef _WIN32
 #if sizeof(struct PackedTime) != 2
 #error Wrong Packed Time Size
+#endif
+#endif
 #endif
 
 struct DirectoryEntry
@@ -48,10 +67,18 @@ struct DirectoryEntry
                                                 (or creation).                         */
     unsigned short    firstclustLo;          /* first cluster of file.      */
     unsigned long     filesize;              /* file size.                  */
-};
+}
+#ifdef __GNUC__
+__attribute__((packed))
+#endif
+;
 
+#ifndef __GNUC__
+#ifndef _WIN32
 #if sizeof(struct DirectoryEntry) != 32
 #error Wrong directory entry structure
+#endif
+#endif
 #endif
 
 struct DirectoryPosition
@@ -71,10 +98,18 @@ struct LongFileNameEntry
        unsigned short firstclust;  /* First cluster number
                                     (always 0000h for LFN records)      */
        unsigned short Part3[2];
-};
+}
+#ifdef __GNUC__
+__attribute__((packed))
+#endif
+;
 
+#ifndef __GNUC__
+#ifndef _WIN32
 #if sizeof(struct LongFileNameEntry) != 32
 #error Wrong LFN entry structure
+#endif
+#endif
 #endif
 
 
@@ -84,7 +119,7 @@ struct LongFileNameEntry
 #define DELETEDLABEL 0xE5
 
 #define IsLastLabel(entry) ((entry).filename[0] == LASTLABEL)
-#define IsDeletedLabel(entry) ((unsigned char) (entry).filename[0] == DELETEDLABEL)
+#define IsDeletedLabel(entry) (((unsigned char) (entry).filename[0]) == (unsigned char)DELETEDLABEL)
 
 #define IsCurrentDir(entry) (((entry).filename[0] == '.') && \
                             ((entry).filename[1] == ' '))
@@ -93,8 +128,12 @@ struct LongFileNameEntry
                               ((entry).filename[1] == '.') && \
                               ((entry).filename[2] == ' '))
 
-#define MarkEntryAsDeleted(entry) ((unsigned char)(entry).filename[0] = DELETEDLABEL)
-
+#define MarkEntryAsDeleted(entry) 							\
+{															\
+    unsigned char x = 0xe5;									\
+	((unsigned char)((entry).filename[0])) = x;				\
+}
+	
 /*
    macro implementing int IsLFNEntry (DirectoryEntry* entry);
 */
@@ -123,13 +162,56 @@ void SetFirstCluster(CLUSTER cluster, struct DirectoryEntry* entry);
 
 CLUSTER LocatePreviousDir(RDWRHandle handle, CLUSTER firstdircluster);
 
+
 /*
-void UnPackTimeDateStamp(struct tm* time, short timestamp, short datestamp);
-void PackTimeDateStamp(struct tm* time, short* timestamp, short* datestamp);
+    Macros to convert to/from a user printable date/time to a entry stored date/time.
 */
+
+#define ENTRYSECOND(time) ((time.second >= 60) ? 29 : (time.second >> 1))
+#define ENTRYMINUTE(time) (time.minute)
+#define ENTRYHOUR(time)   (time.hours)
+
+#define ENTRYDAY(date)    (date.day)
+#define ENTRYMONTH(date)  (date.month)
+#define ENTRYYEAR(date)   (date.year-1980)
+
+#define USERSECOND(time)  (time.second << 1)
+#define USERMINUTE(time)  (time.minute)
+#define USERHOUR(time)    (time.hours)
+
+#define USERDAY(date)     (date.day)
+#define USERMONTH(date)   (date.month)
+#define USERYEAR(date)    (date.year+1980)
+
 
 unsigned long EntryLength(struct DirectoryEntry* entry);
 
 #define DIRLEN2BYTES(x) (x << 5)
+
+/* File attributes */
+#ifndef FA_RDONLY
+#define FA_RDONLY	 0x0001
+#endif
+
+#ifndef FA_HIDDEN
+#define FA_HIDDEN	 0x0002
+#endif 
+
+#ifndef FA_SYSTEM
+#define FA_SYSTEM	 0x0004
+#endif
+
+#ifndef FA_LABEL
+#define FA_LABEL	 0x0008
+#endif
+
+#ifndef FA_DIREC
+#define FA_DIREC	 0x0010
+#endif
+
+#ifndef FA_ARCH
+#define FA_ARCH		 0x0020
+#endif
+
 
 #endif

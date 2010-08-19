@@ -80,17 +80,16 @@ BOOL GetNthDirectoryPosition(RDWRHandle handle, CLUSTER cluster,
 		   struct DirectoryPosition pos;
 		   struct DirectoryEntry* entry;
 
-		   retVal = GetRootDirPosition(handle, (unsigned short) n,
-					       &pos);
+		   retVal = GetRootDirPosition(handle, (unsigned short) n, &pos);
 		   if (retVal)
 		   {
 		      entry = AllocateDirectoryEntry();
-		      if (!entry) return FALSE;
+		      if (!entry) RETURN_FTEERROR(FALSE);
 
 		      if (!GetDirectory(handle, &pos, entry))
 		      {
 			 FreeDirectoryEntry(entry);
-			 return FALSE;
+			 RETURN_FTEERROR(FALSE);
 		      }
 
 		      if (entry->filename[0] != LASTLABEL)
@@ -104,13 +103,9 @@ BOOL GetNthDirectoryPosition(RDWRHandle handle, CLUSTER cluster,
 		   return retVal;
 	       }
 	  case FAT32:
-	       cluster = GetFAT32RootCluster(handle);
-	       if (cluster)
 		  break;
-	       else
-		  return FALSE;
 	  default:
-	       return FALSE;
+	       RETURN_FTEERROR(FALSE);
        }
     }    
    
@@ -160,7 +155,7 @@ BOOL GetNthDirectorySector(RDWRHandle handle, CLUSTER cluster,
     entry = n * ENTRIESPERSECTOR;
     if (!GetNthDirectoryPosition(handle, cluster, entry, &temp))
     {
-       return FALSE;
+       RETURN_FTEERROR(FALSE);
     }
     
     return ReadDataSectors(handle, 1, temp.sector, sector);
@@ -209,9 +204,10 @@ STATIC BOOL SubdirGetter(RDWRHandle handle,
    handle = handle;
    
    if (!GetDirectory(handle, pos, &entry))
-      return FAIL;
+      RETURN_FTEERROR(FAIL);
    
-   if (IsLFNEntry(&entry)          ||
+   if ((entry.attribute & FA_LABEL)||       
+       IsLFNEntry(&entry)          ||
        (IsDeletedLabel(entry))     ||
        (IsCurrentDir(entry))       ||
        (IsPreviousDir(entry)))  

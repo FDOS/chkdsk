@@ -1,5 +1,5 @@
-#ifndef FAT_TRANSFORMATION_ENGINE_H_
-#define FAT_TRANSFORMATION_ENGINE_H_
+#ifndef FAT_TRANSFORMATION_ENGINE
+#define FAT_TRANSFORMATION_ENGINE
 
 /* low level functionality */
 #include "bool.h"
@@ -12,7 +12,7 @@
 #include "rdwrsect.h"
 #include "subdir.h"
 #include "boot.h"
-#include "FSInfo.h"
+#include "fsinfo.h"
 #include "dataarea.h"
 #include "volume.h"
 #include "backup.h"
@@ -21,37 +21,40 @@
 /* high level functionality */
 #include "cpysct.h"
 #include "dircnt.h"
-#include "fndffspc.h"
 #include "fndcidir.h"
 #include "fndcifat.h"
-#include "fndlstct.h"
 #include "gtnthcst.h"
 #include "nthentry.h"
 #include "nthflclt.h"
 #include "relocclt.h"
 #include "swpclst.h"
 #include "walktree.h"
-#include "AdCPDirs.h"
+#include "adcpdirs.h"
 #include "fexist.h"
-#include "FileChn.h"
-#include "Locpath.h"
-#include "WalkWPth.h"
-#include "TracePth.h"
-#include "ClcFSize.h"
-#include "FreeSpac.h"
+#include "filechn.h"
+#include "locpath.h"
+#include "walkwpth.h"
+#include "tracepth.h"
+#include "clcfsize.h"
+#include "freespac.h"
+#include "relocchn.h"
+#include "relocsqc.h"
+#include "vfilesys.h"
 
 /* Miscelanous functionality */
 #include "ftemisc.h"
 #include "wildcard.h"
 #include "pathconv.h"
 #include "mkabspth.h"
+#include "vfsbtfld.h"
+#include "vfsarray.h"
 
 /* Heap memory management */
 #include "ftemem.h"
 
 /* Sector cache */
 #include "sctcache.h"
-#include "PreRead.h"
+#include "preread.h"
 
 /* Data structures */
 #include "dtstrct.h"

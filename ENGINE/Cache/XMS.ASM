@@ -127,8 +127,8 @@ _XMMinit:
         mov  [initFlag], byte 1
         
 .EndOfProc:
-   xor  ah, ah
-   mov  al, [initFlag]
+        xor  ah, ah
+        mov  al, [initFlag]
 
         RestoreRegs
         pop  bp

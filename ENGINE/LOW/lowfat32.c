@@ -21,6 +21,7 @@
    email me at:  imre.leber@worldonline.be
 */
 
+#include <assert.h>
 #include <dos.h>
 #include <string.h>
 
@@ -64,9 +65,11 @@ int ExtendedAbsReadWrite(int drive, int nsects, unsigned long lsect,
     union  REGS inregs, outregs;
     struct SREGS sregs;
     struct DISKIO io;
-
+	
     void far* fpBuffer = (void far*) buffer;
     struct DISKIO far* fpio = (struct DISKIO far*) &io;
+
+    assert(nsects && buffer);
 
     io.diStartSector = lsect;
     io.diSectors     = nsects;

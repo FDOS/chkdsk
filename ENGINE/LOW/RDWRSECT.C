@@ -22,27 +22,30 @@
    email me at:  imre.leber@worldonline.be
 */
 
+#include <stdio.h>
+#include <assert.h>
 #include <io.h>
 #include <dos.h>
 #include <ctype.h>
 #include <fcntl.h>
-#include <alloc.h>
+//#include <alloc.h>
+#include <stdlib.h>
 #include <string.h>
 
-#include "..\header\rdwrsect.h"
-#include "..\..\misc\bool.h"
-#include "..\header\drive.h"
-#include "..\header\FTEerr.h"
-#include "..\disklib\disklib.h"
-#include "..\disklib\dosio.h"
-#include "..\header\fatconst.h"
-#include "..\header\lowfat32.h"
-#include "..\header\direct.h"
-#include "..\header\boot.h"
-#include "..\header\direct.h"
-#include "..\header\fsinfo.h"
-#include "..\header\FTEMem.h"
-#include "..\cache\WrtBack.h"
+#include "../header/rdwrsect.h"
+#include "../../misc/bool.h"
+#include "../header/drive.h"
+#include "../header/FTEerr.h"
+#include "../disklib/disklib.h"
+#include "../disklib/dosio.h"
+#include "../header/fatconst.h"
+#include "../header/lowfat32.h"
+#include "../header/direct.h"
+#include "../header/boot.h"
+#include "../header/direct.h"
+#include "../header/fsinfo.h"
+#include "../header/FTEMem.h"
+#include "../cache/WrtBack.h"
 
 #ifdef USE_SECTOR_CACHE
 #include "..\header\sctcache.h"
@@ -54,22 +57,26 @@ static int UniqueCounter=0;
 static char   LastReadBuffer[512];
 unsigned long LastReadBufferSector  = INVALID_SECTOR;
 
-#define UNUSED(x) x=x
+#define UNUSED(x) if(x);
+
+#define DEBUG_CACHE
 
 /* Image file modifiers. */
 static int ReadFromImageFile(int handle, int nsects, SECTOR lsect,
                              void* buffer)
 {
+  assert(buffer && nsects);  
+    
   if (lseek(handle, lsect*BYTESPERSECTOR, SEEK_SET) == -1L)
   {
      SetFTEerror(FTE_READ_ERR);
-     return -1;
+     RETURN_FTEERROR(-1); 
   }
 
   if ((read(handle, buffer, nsects*BYTESPERSECTOR)) == -1)
   {
      SetFTEerror(FTE_READ_ERR);
-     return -1;
+     RETURN_FTEERROR(-1);
   }
 
   return 0;
@@ -79,17 +86,18 @@ static int WriteToImageFile(int handle, int nsects, SECTOR lsect,
                             void* buffer, unsigned area)
 {
   UNUSED(area);
+  assert(buffer && nsects);
 
   if (lseek(handle, lsect*BYTESPERSECTOR, SEEK_SET) == -1L)
   {
      SetFTEerror(FTE_WRITE_ERR);
-     return -1;
+     RETURN_FTEERROR(-1); 
   }
 
   if (write(handle, buffer, nsects*BYTESPERSECTOR) == -1)
   {
      SetFTEerror(FTE_WRITE_ERR);
-     return -1;
+     RETURN_FTEERROR(-1); 
   }
 
   return 0;
@@ -110,39 +118,16 @@ static int WriteToImageFile(int handle, int nsects, SECTOR lsect,
 
 #ifdef ALLOW_REALDISK
 
-static int ReadFromRealDisk12(int handle, int nsects, SECTOR lsect,
-                              void* buffer)
-{
-  if (absread(handle, nsects, (int) lsect, buffer) == -1)
-  {
-     SetFTEerror(FTE_READ_ERR);
-     return -1;
-  }
-
-  return 0;
-}
-
-static int WriteToRealDisk12(int handle, int nsects, SECTOR lsect,
-                             void* buffer, unsigned area)
-{
-  UNUSED(area);
-
-  if (abswrite(handle, nsects, (int) lsect, buffer) == -1)
-  {
-     SetFTEerror(FTE_WRITE_ERR);
-     return -1;
-  }
-
-  return 0;
-}
 
 static int ReadFromRealDisk16(int handle, int nsects, SECTOR lsect,
                               void* buffer)
 {
+   assert(buffer && nsects);
+    
    if (disk_read_ext(handle, lsect, buffer, nsects) != DISK_OK)
    {
      SetFTEerror(FTE_READ_ERR);
-     return -1;
+     RETURN_FTEERROR(-1);  
    }
    return 0;
 }
@@ -151,30 +136,61 @@ static int WriteToRealDisk16(int handle, int nsects, SECTOR lsect,
                              void* buffer, unsigned area)
 {
    UNUSED(area);
+   assert(buffer && nsects);
 
-   if (disk_read_ext(handle, lsect, buffer, nsects) != DISK_OK)
+   if (disk_write_ext(handle, lsect, buffer, nsects) != DISK_OK)
    {
      SetFTEerror(FTE_WRITE_ERR);
-     return -1;
+     RETURN_FTEERROR(-1);  
    }
    return 0;
+}
+
+static int ReadFromRealDisk12(int handle, int nsects, SECTOR lsect,
+                              void* buffer)
+{
+  assert(buffer && nsects);
+    
+  if (absread(handle, nsects, (int) lsect, buffer) == -1)
+  {
+     if (ReadFromRealDisk16(handle, nsects, lsect, buffer))
+     {      
+	 SetFTEerror(FTE_READ_ERR);
+	 RETURN_FTEERROR(-1);
+     }	 
+  }
+
+  return 0;
+}
+
+static int WriteToRealDisk12(int handle, int nsects, SECTOR lsect,
+                             void* buffer, unsigned area)
+{
+  assert(buffer && nsects);
+    
+  if (abswrite(handle, nsects, (int) lsect, buffer) == -1)
+  {
+     if (WriteToRealDisk16(handle, nsects, lsect, buffer, area))
+     { 	 
+        SetFTEerror(FTE_WRITE_ERR);
+	RETURN_FTEERROR(-1); 
+     }	 
+  }
+
+  return 0;
 }
 
 static int ReadFromRealDisk32(int handle, int nsects, SECTOR lsect,
                               void* buffer)
 {
-   /* Don't use DISKLIB here (it uses ioctl for FAT12/16 which according to
-      microsoft docs does not work!) */
-
    return ExtendedAbsReadWrite(handle+1, nsects, lsect, buffer, 0);
 }
 
 static int WriteToRealDisk32(int handle, int nsects, SECTOR lsect,
                              void* buffer, unsigned area)
 {
-   /* Don't use DISKLIB here (it uses ioctl for FAT12/16 which according to
-      microsoft docs does not work!) */
-
+   assert(area);
+    
    return ExtendedAbsReadWrite(handle+1, nsects, lsect, buffer, area);
 }
 
@@ -193,6 +209,8 @@ int ReadSectors(RDWRHandle handle, int nsects, SECTOR lsect, void* buffer)
     char* cbuffer = (char*) buffer, *cbuffer1;
     char secbuf[512];
     int i;
+    
+    assert(buffer);
 
     for (i=0, sector = lsect; i < nsects; sector++, i++)
     {
@@ -200,12 +218,27 @@ int ReadSectors(RDWRHandle handle, int nsects, SECTOR lsect, void* buffer)
                                  sector, 
                                  secbuf))
 	{
+#ifndef NDEBUG
+#ifdef  DEBUG_CACHE	
+#ifndef WRITE_BACK_CACHE
+	    char sectbuf1[512];
+	    
+	    if (handle->ReadFunc(handle->handle, 1, sector, sectbuf1) == -1)
+		assert(FALSE);
+	      
+	    if (memcmp(secbuf, sectbuf1, 512) != 0)
+	    {
+		assert(FALSE);
+	    }
+#endif	    
+#endif
+#endif	    	    
             if (LastReadFromDisk)
             {
                if (handle->ReadFunc(handle->handle, (int)(sector-beginsector),
                                     beginsector, cbuffer) == -1)
                {
-                  return -1;
+                  RETURN_FTEERROR(-1);
 	       }
 
 	       /* Put the read sectors in the cache. */
@@ -237,7 +270,7 @@ int ReadSectors(RDWRHandle handle, int nsects, SECTOR lsect, void* buffer)
        if (handle->ReadFunc(handle->handle, (int)((lsect+nsects)-beginsector),
                             beginsector, cbuffer) == -1)
        {
-          return -1;
+	  RETURN_FTEERROR(-1); 
        }
 
        /* Put the read sectors in the cache. */
@@ -253,6 +286,8 @@ int ReadSectors(RDWRHandle handle, int nsects, SECTOR lsect, void* buffer)
 #else
 int ReadSectors(RDWRHandle handle, int nsects, SECTOR lsect, void* buffer)
 {   
+    assert(buffer);
+    
     return handle->ReadFunc(handle->handle, nsects, lsect, buffer);
 }
 #endif
@@ -281,19 +316,39 @@ int WriteSectors(RDWRHandle handle, int nsects, SECTOR lsect, void* buffer,
 {
     int i;
     SECTOR sector;
-    char* cbuffer = (char*) buffer;   
+    char* cbuffer = (char*) buffer; 
+    
+    assert(buffer && nsects);
 
     if ((LastReadBufferSector >= lsect) && 
                                 (LastReadBufferSector < (lsect + nsects)))
     {        
-       LastReadBufferSector = INVALID_SECTOR;       
+       LastReadBufferSector = INVALID_SECTOR;   
     }
+    
+    if (handle->ReadWriteMode == READING)
+    { 
+        SetFTEerror(FTE_WRITE_ON_READONLY);
+	RETURN_FTEERROR(-1);
+    }       
     
     for (i=0, sector = lsect; i < nsects; sector++, i++)
     {
         CacheSector(handle->UniqueNumber, sector, cbuffer, TRUE, area);
         cbuffer += BYTESPERSECTOR;
     }     
+
+/*/---- To BE REMOVED    
+    
+    if (handle->WriteFunc(handle->handle, nsects, lsect, buffer, area) == -1)
+    { 
+       for (i=0, sector = lsect; i < nsects; sector++, i++)
+           UncacheSector(handle->UniqueNumber, sector);
+       RETURN_FTEERROR(-1);
+    }
+    
+//---- To BE REMOVED    */
+    
     return 0;
 }                 
 #else
@@ -303,6 +358,8 @@ int WriteSectors(RDWRHandle handle, int nsects, SECTOR lsect, void* buffer,
     int i;
     SECTOR sector;
     char* cbuffer = (char*) buffer;
+    
+    assert(buffer && nsects);
 
     if ((LastReadBufferSector >= lsect) && 
                                 (LastReadBufferSector < (lsect + nsects)))
@@ -313,14 +370,14 @@ int WriteSectors(RDWRHandle handle, int nsects, SECTOR lsect, void* buffer,
     if (handle->ReadWriteMode == READING)
     { 
         SetFTEerror(FTE_WRITE_ON_READONLY);
-        return -1; 
+	RETURN_FTEERROR(-1);
     }   
 
     if (handle->WriteFunc(handle->handle, nsects, lsect, buffer, area) == -1)
     { 
        for (i=0, sector = lsect; i < nsects; sector++, i++)
            UncacheSector(handle->UniqueNumber, sector);
-       return -1; 
+       RETURN_FTEERROR(-1);
     }
   
     for (i=0, sector = lsect; i < nsects; sector++, i++)
@@ -335,6 +392,8 @@ int WriteSectors(RDWRHandle handle, int nsects, SECTOR lsect, void* buffer,
 int WriteSectors(RDWRHandle handle, int nsects, SECTOR lsect, void* buffer,
                  unsigned area)
 {
+    assert(buffer && nsects);
+    
     if ((LastReadBufferSector >= lsect) && 
                                 (LastReadBufferSector < (lsect + nsects)))
     {        
@@ -346,7 +405,7 @@ int WriteSectors(RDWRHandle handle, int nsects, SECTOR lsect, void* buffer,
     else
     {
         SetFTEerror(FTE_WRITE_ON_READONLY); 
-        return -1;
+	RETURN_FTEERROR(-1);
     }
 }
 #endif
@@ -358,9 +417,12 @@ static int PrivateInitReadWriteSectors(char* driveorfile, int modus,
                                        RDWRHandle* handle)
 {
     unsigned sectorsize;
+    
+    assert(driveorfile && handle);
+    assert((modus == O_RDWR) || (modus == O_RDONLY));
 
     *handle = (RDWRHandle) malloc(sizeof(struct RDWRHandleStruct));
-    if (*handle == NULL) return FALSE;
+    if (*handle == NULL) RETURN_FTEERR(FALSE);
     memset(*handle, 0, sizeof(struct RDWRHandleStruct));
 
 #ifdef ALLOW_REALDISK
@@ -378,29 +440,29 @@ static int PrivateInitReadWriteSectors(char* driveorfile, int modus,
        }
        else
        {
-	  struct DEVICEPARAMS devicepars;
-	  unsigned long disksize;
+	  struct dfree diskfree;
 
-	  /* Get bytes per sector */
-	  if (disk_getparams((*handle)->handle, &devicepars) != DISK_OK)
+	  /* New trick: we start out asuming that we have a volume < 32MB. 
+	                If it is not possible to use absread/abswrite on
+	                this disk, we automatically switch over to 
+		        disk_read_ext/disk_write_ext				
+	   
+	     We can probably get away with this, because it is not a FreeDOS concern */	  
+	  
+	  (*handle)->ReadFunc  = ReadFromRealDisk12;
+          (*handle)->WriteFunc = WriteToRealDisk12;
+	  
+	  getdfree((*handle)->handle+1, &diskfree);
+	  
+	  if (diskfree.df_sclus == 0xffff)
 	  {
 	     free(*handle);
 	     *handle = NULL;
-	     return FALSE;
+	     SetFTEerror(FTE_READ_ERR);  
+	     RETURN_FTEERR(FALSE);
 	  }
-	  (*handle)->BytesPerSector = devicepars.sec_size;
-
-	  disksize = BYTESPERSECTOR * devicepars.total_sectors;
-	  if (disksize < HD32MB)
-	  {
-	     (*handle)->ReadFunc  = ReadFromRealDisk12;
-	     (*handle)->WriteFunc = WriteToRealDisk12;
-	  }
-	  else
-	  {
-	     (*handle)->ReadFunc  = ReadFromRealDisk16;
-	     (*handle)->WriteFunc = WriteToRealDisk16;
-	  }
+	  
+	  (*handle)->BytesPerSector = diskfree.df_bsec;
        }
     }
     else
@@ -416,7 +478,8 @@ static int PrivateInitReadWriteSectors(char* driveorfile, int modus,
        {
           free(*handle);
           *handle = NULL;
-          return FALSE;
+	  SetFTEerror(FTE_READ_ERR); 
+	  RETURN_FTEERR(FALSE); 
        }
 
        /* Get number of bytes per sector from the boot sector, this
@@ -433,7 +496,8 @@ static int PrivateInitReadWriteSectors(char* driveorfile, int modus,
        {
 	  free(*handle);
 	  *handle = NULL;
-	  return FALSE;
+	  SetFTEerror(FTE_READ_ERR);  
+	  RETURN_FTEERR(FALSE); 
        }
 
        if (read((*handle)->handle, &((*handle)->BytesPerSector),
@@ -441,7 +505,8 @@ static int PrivateInitReadWriteSectors(char* driveorfile, int modus,
        {
 	  free(*handle);
 	  *handle = NULL;
-	  return FALSE;
+	  SetFTEerror(FTE_READ_ERR);  
+	  RETURN_FTEERR(FALSE); 
        }
 
        /* No need to reset to the beginning of the file. */
@@ -450,7 +515,7 @@ static int PrivateInitReadWriteSectors(char* driveorfile, int modus,
     if ((*handle)->BytesPerSector != 512)
     {
        SetFTEerror(FTE_INVALID_BYTESPERSECTOR);
-       return FALSE;
+       RETURN_FTEERR(FALSE);	 
     }
     
 #ifdef USE_SECTOR_CACHE

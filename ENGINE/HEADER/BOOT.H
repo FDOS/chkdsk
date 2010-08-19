@@ -29,10 +29,18 @@ struct FAT32Specific
    unsigned char UnUsed[420];
    unsigned short LastTwoBytes;   /* Value of the last two bytes if
                                      BYTESPERSECTOR == 512                   */
-};
+} 
+#ifdef __GNUC__
+__attribute__((packed))
+#endif
+;
 
+#ifndef __GNUC__
+#ifndef _WIN32
 #if sizeof(struct FAT32Specific) != 476
 #error Wrong struct FAT32Specific
+#endif
+#endif
 #endif
 
 struct FAT1216Specific
@@ -49,17 +57,29 @@ struct FAT1216Specific
 
    unsigned short LastTwoBytes;  /* Value of the last two bytes if
                                     BYTESPERSECTOR == 512                   */
-};
+} 
+#ifdef __GNUC__
+__attribute__((packed))
+#endif
+;
 
+#ifndef __GNUC__
+#ifndef _WIN32
 #if sizeof(struct FAT1216Specific) != 476
 #error Wrong struct FAT1216Specific
+#endif
+#endif
 #endif
 
 union FATSpecific
 {
    struct FAT32Specific spc32;
    struct FAT1216Specific spc1216;
-};
+} 
+#ifdef __GNUC__
+__attribute__((packed))
+#endif
+;
 
 struct BootSectorStruct
 {
@@ -83,10 +103,18 @@ struct BootSectorStruct
                                         if this is FAT 32                 */
    union FATSpecific fs;             /* Fields that are different for
                                         FAT 12/16 and FAT32               */
-};
+} 
+#ifdef __GNUC__
+__attribute__((packed))
+#endif
+;
 
+#ifndef __GNUC__
+#ifndef _WIN32
 #if sizeof(struct BootSectorStruct) != 512
 #error WRONG BOOT SECTOR STRUCT LENGTH
+#endif
+#endif
 #endif
 
 BOOL ReadBootSector(RDWRHandle handle, struct BootSectorStruct* buffer);
@@ -96,7 +124,7 @@ BOOL WriteBootSector(RDWRHandle handle, struct BootSectorStruct* buffer);
 unsigned short GetNumberOfRootEntries(RDWRHandle handle); 
 
 /* Return the right fields looking at what type of FAT is realy used. */
-unsigned char  GetSectorsPerCluster(RDWRHandle handle);
+unsigned long  GetSectorsPerCluster(RDWRHandle handle);
 unsigned short GetReservedSectors(RDWRHandle handle);
 unsigned char  GetNumberOfFats(RDWRHandle handle);
 unsigned char  GetMediaDescriptor(RDWRHandle handle);
@@ -182,4 +210,3 @@ void WriteFAT32BackupBootSector(struct BootSectorStruct* boot, unsigned short ba
          (((unsigned char*)bootsect)[511] == 0xAA))                     
                                         
 #endif
-

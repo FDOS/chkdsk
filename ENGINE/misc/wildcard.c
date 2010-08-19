@@ -20,10 +20,14 @@
    email me at:  imre.leber@worldonline.be
 */
 
+#include <assert.h>
 #include <string.h>
 #include <ctype.h>
 
-#include "..\..\misc\bool.h"
+#include "../../misc/bool.h"
+
+#include "fte.h"
+
 
 static BOOL MatchFilePart(char* joker, char* part, int partlen);
 
@@ -53,12 +57,14 @@ BOOL MatchWildcard(char* joker, char* filename, char* extension)
    char* dot = strchr(joker, '.');
    char first[9];
 
+   assert(joker && filename && extension); 
+    
    if (dot)
    {
       if (dot[1] == 0)
       {
          if (memcmp(extension, "   ", 3) != 0)
-            return FALSE;
+            RETURN_FTEERROR(FALSE);	
 
 	 strcpy(first, joker);
          first[strlen(first)] = 0;
@@ -99,9 +105,11 @@ BOOL MatchWildcard(char* joker, char* filename, char* extension)
 static BOOL MatchFilePart(char* joker, char* part, int partlen)
 {
    int i, len = strlen(joker);
+    
+   assert(joker && part); 
 
-   if (strlen(joker) > partlen)
-      return FALSE;
+   if (strlen(joker) > (size_t)partlen)
+      RETURN_FTEERROR(FALSE);	
 
    for (i = 0; i < len; i++)
    {
@@ -109,12 +117,12 @@ static BOOL MatchFilePart(char* joker, char* part, int partlen)
           return TRUE;
           
        if ((joker[i] != '?') && (toupper(joker[i]) != toupper(part[i])))
-          return FALSE;
+          RETURN_FTEERROR(FALSE);	
    }
 
    for (; i < partlen; i++)
        if (part[i] != ' ')
-          return FALSE;
+          RETURN_FTEERROR(FALSE);	
 
    return TRUE;
 }

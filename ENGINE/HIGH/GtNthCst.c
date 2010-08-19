@@ -37,7 +37,7 @@ BOOL GetNthCluster(RDWRHandle handle, CLUSTER n, CLUSTER* label)
    int fatlabelsize = GetFatLabelSize(handle);
    
    if (!ReadFatLabel(handle, n, &result))
-      return FALSE;
+      RETURN_FTEERROR(FALSE);
       
    switch (fatlabelsize)
    {

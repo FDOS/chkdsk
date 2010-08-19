@@ -21,7 +21,7 @@
    email me at:  imre.leber@worldonline.be
 */
 /*
-   This file consists because of a requirement of the FAT32 api to
+   This file exists because of a requirement of the FAT32 api to
    give the place where you write as a parameter to the new absolete
    write function.
 

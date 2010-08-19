@@ -21,6 +21,8 @@
    email me at:  imre.leber@worldonline.be
 */
 
+#include <assert.h>
+
 #include "fte.h"
 
 #include "blkcache.h"
@@ -73,7 +75,7 @@ int CacheSector(unsigned devid, SECTOR sector, char* buffer, BOOL dirty,
                 unsigned area)
 {
    if (!CacheActive()) return TRUE;
-   
+        
    return CacheBlockSector(devid, sector, buffer, dirty, area);        
 }
 
@@ -106,8 +108,12 @@ BOOL CacheActive()
 }
 
 int CommitCache(void)
-{
+{   
+    if (!CacheActive()) return FALSE;   
+    
 #ifdef USE_SECTOR_CACHE
     return WriteBackCache();
+#else
+    return TRUE;
 #endif
 }

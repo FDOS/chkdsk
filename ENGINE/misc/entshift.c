@@ -54,8 +54,8 @@ static BOOL PrivateRotateEntriesRight(RDWRHandle handle, CLUSTER dirclust,
             if (!ignoreerror)
             {        
                PrivateRotateEntriesLeft(handle, dirclust,
-                                        begin, end, i, TRUE);           
-               return FALSE;
+                                        begin, end, i, TRUE);    
+	       RETURN_FTEERROR(FALSE);	
             }
          }
      
@@ -65,7 +65,7 @@ static BOOL PrivateRotateEntriesRight(RDWRHandle handle, CLUSTER dirclust,
             PrivateRotateEntriesLeft(handle, dirclust,
                                      begin, end, i, TRUE);   
             
-            if (!ignoreerror) return FALSE;
+            if (!ignoreerror) RETURN_FTEERROR(FALSE);	
          }
          
          /* Get the first directory entry. */
@@ -74,7 +74,7 @@ static BOOL PrivateRotateEntriesRight(RDWRHandle handle, CLUSTER dirclust,
             PrivateRotateEntriesLeft(handle, dirclust,
                                      begin, end, i, TRUE); 
             
-            if (!ignoreerror) return FALSE;
+            if (!ignoreerror) RETURN_FTEERROR(FALSE);	
          }
              
          /* Store it in entry1. */
@@ -82,7 +82,7 @@ static BOOL PrivateRotateEntriesRight(RDWRHandle handle, CLUSTER dirclust,
          {           
             PrivateRotateEntriesLeft(handle, dirclust,
                                      begin, end, i, TRUE); 
-            if (!ignoreerror) return FALSE;
+            if (!ignoreerror) RETURN_FTEERROR(FALSE);	
          }
 
          /* Move the entries all to the end. */
@@ -99,7 +99,7 @@ static BOOL PrivateRotateEntriesRight(RDWRHandle handle, CLUSTER dirclust,
                    WriteDirectory(handle, &pos2, &entry1);     
                    PrivateRotateEntriesLeft(handle, dirclust, 
                                             begin, end, i, TRUE);       
-                   return FALSE;
+                   RETURN_FTEERROR(FALSE);	
                 }
              }
 
@@ -114,7 +114,7 @@ static BOOL PrivateRotateEntriesRight(RDWRHandle handle, CLUSTER dirclust,
                    WriteDirectory(handle, &pos2, &entry1);     
                    PrivateRotateEntriesLeft(handle, dirclust, 
                                             begin, end, i, TRUE);
-                   return FALSE;
+                   RETURN_FTEERROR(FALSE);	
                 }
              }
 
@@ -131,7 +131,7 @@ static BOOL PrivateRotateEntriesRight(RDWRHandle handle, CLUSTER dirclust,
                    WriteDirectory(handle, &pos2, &entry1);     
                    PrivateRotateEntriesLeft(handle, dirclust, 
                                             begin, end, i, TRUE);
-                   return FALSE; 
+                   RETURN_FTEERROR(FALSE);	
                 }
              }
 
@@ -144,7 +144,7 @@ static BOOL PrivateRotateEntriesRight(RDWRHandle handle, CLUSTER dirclust,
         if (!WriteDirectory(handle, &head, &last))
         {
            if (!ignoreerror) 
-              return FALSE;
+              RETURN_FTEERROR(FALSE);	
         }
     }
     return TRUE;
@@ -170,7 +170,7 @@ static BOOL PrivateRotateEntriesLeft(RDWRHandle handle, CLUSTER dirclust,
             {        
                PrivateRotateEntriesRight(handle, dirclust,
                                          begin, end, i, TRUE);  
-               return FALSE;
+               RETURN_FTEERROR(FALSE);	
             }
          }
      
@@ -181,7 +181,7 @@ static BOOL PrivateRotateEntriesLeft(RDWRHandle handle, CLUSTER dirclust,
             {        
                PrivateRotateEntriesRight(handle, dirclust,
                                          begin, end, i, TRUE);                      
-               return FALSE;
+               RETURN_FTEERROR(FALSE);	
             }
          }
 
@@ -192,7 +192,7 @@ static BOOL PrivateRotateEntriesLeft(RDWRHandle handle, CLUSTER dirclust,
             {        
                PrivateRotateEntriesRight(handle, dirclust,
                                          begin, end, i, TRUE);  
-               return FALSE;
+               RETURN_FTEERROR(FALSE);	
             }
          }
 
@@ -203,7 +203,7 @@ static BOOL PrivateRotateEntriesLeft(RDWRHandle handle, CLUSTER dirclust,
             {
                PrivateRotateEntriesRight(handle, dirclust,
                                          begin, end, i, TRUE);  
-               return FALSE;
+               RETURN_FTEERROR(FALSE);	
             }
          }
 
@@ -221,7 +221,7 @@ static BOOL PrivateRotateEntriesLeft(RDWRHandle handle, CLUSTER dirclust,
                    WriteDirectory(handle, &pos2, &entry1);     
                    PrivateRotateEntriesRight(handle, dirclust, 
                                              begin, end, i, TRUE);
-                   return FALSE;
+                   RETURN_FTEERROR(FALSE);	
                 }
              }
              
@@ -236,7 +236,7 @@ static BOOL PrivateRotateEntriesLeft(RDWRHandle handle, CLUSTER dirclust,
                    WriteDirectory(handle, &pos2, &entry1);     
                    PrivateRotateEntriesRight(handle, dirclust, 
                                              begin, end, i, TRUE);
-                   return FALSE;
+                   RETURN_FTEERROR(FALSE);	
                 }                        
              }
              
@@ -251,7 +251,7 @@ static BOOL PrivateRotateEntriesLeft(RDWRHandle handle, CLUSTER dirclust,
                    WriteDirectory(handle, &pos2, &entry1);     
                    PrivateRotateEntriesRight(handle, dirclust, 
                                              begin, end, i, TRUE);
-                   return FALSE;
+                   RETURN_FTEERROR(FALSE);	
                 }
              }
 
@@ -264,7 +264,7 @@ static BOOL PrivateRotateEntriesLeft(RDWRHandle handle, CLUSTER dirclust,
         if (!WriteDirectory(handle, &last, &head))
         {
            if (!ignoreerror) 
-              return FALSE;
+              RETURN_FTEERROR(FALSE);	
         }
     }
     return TRUE;
@@ -288,6 +288,10 @@ BOOL RotateEntriesLeft(RDWRHandle handle, CLUSTER dirclust,
 ***                      SwapBasicEntries
 ***************************************************************************
 *** Swaps the elementary entries at pos1 and pos2.
+***
+*** Returns:
+***    FALSE: failure
+***    TRUE:  success
 ***************************************************************************/
 
 BOOL SwapBasicEntries(RDWRHandle handle, 
@@ -298,25 +302,23 @@ BOOL SwapBasicEntries(RDWRHandle handle,
      
      if (!GetDirectory(handle, pos1, &entry1))
      {
-        return FALSE;
+        RETURN_FTEERROR(FALSE);	
      }
      
      if (!GetDirectory(handle, pos2, &entry2))
      {
-        return FALSE;  
+        RETURN_FTEERROR(FALSE);	
      }
      
      if (!WriteDirectory(handle, pos1, &entry2))
      {
-        WriteDirectory(handle, pos1, &entry1);       
-        return FALSE;
+        RETURN_FTEERROR(FALSE);	
      }
      
      if (!WriteDirectory(handle, pos2, &entry1))
      {
         WriteDirectory(handle, pos1, &entry1);
-        WriteDirectory(handle, pos2, &entry2);
-        return FALSE;
+        RETURN_FTEERROR(FALSE);	
      }
      
      return TRUE;
@@ -349,7 +351,7 @@ static BOOL SwapNBasicEntries(RDWRHandle handle, CLUSTER cluster,
                SwapBasicEntries(handle, &pos1, &pos2);         
            }                  
           
-           return FALSE; 
+           RETURN_FTEERROR(FALSE);	
         }
         
         /* Get the directory position of the second */
@@ -362,7 +364,7 @@ static BOOL SwapNBasicEntries(RDWRHandle handle, CLUSTER cluster,
                SwapBasicEntries(handle, &pos1, &pos2);         
            }                
                 
-           return FALSE; 
+           RETURN_FTEERROR(FALSE);	
         }
 
         /* and swap */
@@ -374,7 +376,7 @@ static BOOL SwapNBasicEntries(RDWRHandle handle, CLUSTER cluster,
                GetNthDirectoryPosition(handle, cluster, begin2+i, &pos2);
                SwapBasicEntries(handle, &pos1, &pos2);         
            }
-           return FALSE;
+           RETURN_FTEERROR(FALSE);	
        }
     }
     return TRUE;
@@ -403,12 +405,12 @@ BOOL SwapLFNEntries(RDWRHandle handle,
     do {
        if (!GetNthDirectoryPosition(handle, cluster, end1, &pos1))
        {
-          return FALSE;
+          RETURN_FTEERROR(FALSE);	
        }
        
        if (!GetDirectory(handle, &pos1, &entry1))
        {
-          return FALSE;
+          RETURN_FTEERROR(FALSE);	
        }
        
        end1++; 
@@ -420,12 +422,12 @@ BOOL SwapLFNEntries(RDWRHandle handle,
     do {
        if (!GetNthDirectoryPosition(handle, cluster, end2, &pos2))
        {
-          return FALSE;
+          RETURN_FTEERROR(FALSE);	
        }
        
        if (!GetDirectory(handle, &pos2, &entry2))
        {
-          return FALSE;
+          RETURN_FTEERROR(FALSE);	
        }
        
        end2++; 
@@ -440,20 +442,20 @@ BOOL SwapLFNEntries(RDWRHandle handle,
        difference = len2-len1;
        if (!RotateEntriesRight(handle, cluster, end1, begin2+difference, difference))
        {
-          return FALSE;
+          RETURN_FTEERROR(FALSE);	
        }
        
        if (!SwapNBasicEntries(handle, cluster, begin1, begin2+difference, len1))
        {
           RotateEntriesLeft(handle, cluster, end1, begin2+difference, difference);
-          return FALSE;     
+          RETURN_FTEERROR(FALSE);	     
        }
             
        if (!RotateEntriesRight(handle, cluster, begin1, end1+difference, difference))
        {
           SwapNBasicEntries(handle, cluster, begin1, begin2+difference, len1);
           RotateEntriesLeft(handle, cluster, end1, begin2+difference, difference);
-          return FALSE;
+          RETURN_FTEERROR(FALSE);	
        }
     }
     else if (len1 > len2)
@@ -461,20 +463,20 @@ BOOL SwapLFNEntries(RDWRHandle handle,
        difference = len1-len2;
        if (!RotateEntriesLeft(handle, cluster, end1-difference, begin2, difference))
        {
-          return FALSE;
+          RETURN_FTEERROR(FALSE);	
        }
        
        if (!SwapNBasicEntries(handle, cluster, begin1, begin2, len2))
        {
           RotateEntriesRight(handle, cluster, end1-difference, begin2, difference);
-          return FALSE;     
+          RETURN_FTEERROR(FALSE);	     
        }
             
        if (!RotateEntriesLeft(handle, cluster, begin1, end1+difference, difference))
        {
           SwapNBasicEntries(handle, cluster, begin1, begin2, len2);
           RotateEntriesRight(handle, cluster, end1-difference, begin2, difference);
-          return FALSE;
+          RETURN_FTEERROR(FALSE);	
        }    
     }
     else /* len1 == len2 */

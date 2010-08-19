@@ -23,6 +23,7 @@
 #include <string.h>
 
 #include "fte.h"
+#include "../header/strnicmp.h"
 
 struct Pipe
 {
@@ -61,7 +62,7 @@ BOOL LoFileNameExists(RDWRHandle handle, CLUSTER firstcluster,
 
    if (!TraverseSubdir(handle, firstcluster, ExistanceChecker,
                        (void**) &ppipe, TRUE))
-      return FAIL;
+      RETURN_FTEERROR(FAIL);
 
    return pipe.exists;
 }
@@ -73,7 +74,7 @@ static BOOL ExistanceChecker(RDWRHandle handle, struct DirectoryPosition* pos,
    struct DirectoryEntry entry;
 
    if (!GetDirectory(handle, pos, &entry))
-      return FAIL;
+      RETURN_FTEERROR(FAIL);
 
    if (IsLFNEntry(&entry))
       return TRUE;

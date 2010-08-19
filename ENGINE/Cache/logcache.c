@@ -4,7 +4,7 @@
    Copyright (C) 2002 Imre Leber
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
+   it under the terms of the GNU General presePublic License as published by
    the Free Software Foundation; either version 2 of the License, or
    (at your option) any later version.
 
@@ -21,38 +21,37 @@
    email me at:  imre.leber@worldonline.be
 */
 
+#include <assert.h>
 #include <limits.h>
 #include <stdlib.h>
 
 #include "fte.h"                                     
-
-
-
 #include "ems.h"
 #include "phscache.h"
+#include "logcache.h"
 
 #define SECTORSPERBLOCK 31
 
-struct LogicalBlockInfo
-{
-   char*    address;
-   unsigned age;
- 
-   BOOL     present;
-   unsigned long PhysicalBlock;
-};
+static int NextBlockPointer = 0;
 
-static struct LogicalBlockInfo LogicalBlocks[4+4];
+struct LogicalBlockInfo LogicalBlocks[4+4];
 
-static unsigned LogicalTime = 0;
+#ifndef NDEBUG
+unsigned NumberOfPhysicalBlocks;
+#endif
 
 /* Returns wether there was enough conventionel memory to contain the logical
    blocks for XMS. */
-unsigned long InitialiseLogicalCache(void)
+unsigned InitialiseLogicalCache(void)
 {
     int i, j;
+#ifdef USE_EMS
     unsigned int EMSBase;
-    unsigned long NumberOfPhysicalBlocks;
+#endif
+
+#ifdef NDEBUG    
+    unsigned NumberOfPhysicalBlocks;
+#endif
     
     /* Allocate the memory to contain the pages for XMS (or just a
        conventional cache). Initialise them. */
@@ -65,11 +64,10 @@ unsigned long InitialiseLogicalCache(void)
            for (j = 0; j < i; j++)
                FTEFree(LogicalBlocks[j].address);
                
-           return 0;
+           RETURN_FTEERROR(0); 
         }
                
         LogicalBlocks[i].age     = 0;
-        LogicalBlocks[i].present = TRUE;
         LogicalBlocks[i].PhysicalBlock = i;
     }
     
@@ -78,25 +76,20 @@ unsigned long InitialiseLogicalCache(void)
     if (NumberOfPhysicalBlocks < 4) NumberOfPhysicalBlocks = 4;
 
     /* Initialise the EMS part, according to wether EMS is available */
+#ifdef USE_EMS    
     if (IsEMSCached())
     {
        EMSBase = EMSbaseaddress();
+       assert(EMSBase);
        
        for (; i < 8; i++)
        {
            LogicalBlocks[i].address = (char far *)MK_FP(EMSBase, i * CACHEBLOCKSIZE);
            LogicalBlocks[i].age     = 0;
-           LogicalBlocks[i].present = TRUE;  
            LogicalBlocks[i].PhysicalBlock = i;             
        }
     }
-    else
-    {
-       for (; i < 8; i++)
-       {
-           LogicalBlocks[i].present = FALSE;               
-       }    
-    }
+#endif
     
     return NumberOfPhysicalBlocks;
 }
@@ -113,102 +106,80 @@ void CloseLogicalCache(void)
    ClosePhysicalCache();
 }
 
-char* GetLogicalBlockAddress(int logicalblock)
+char* EnsureBlockMapped(unsigned physicalblock)
 {
-    return LogicalBlocks[logicalblock].address;
-}
-
-unsigned long GetMappedPhysicalBlock(int logicalblock)
-{
-    return LogicalBlocks[logicalblock].PhysicalBlock;
-}
-
-static int GetOldestLogicalBlock(int memtype)
-{
-    int min = UINT_MAX, index, i;
+    assert(physicalblock < NumberOfPhysicalBlocks);
     
-    if (memtype == XMS)
-    {    
-       for (i = 0; i < 4; i++)
-       {
-           if ((LogicalBlocks[i].present) &&
-               (LogicalBlocks[i].age < min))
-           {
-              min = LogicalBlocks[i].age;
-              index = i;
-           }
-       }
-    }
-    else /* EMS */
+    /* First see wether the block is not already cached. */ 
+#ifdef USE_EMS    
     {
-       for (i = 4; i < 8; i++)
-       {
-           if ((LogicalBlocks[i].present) &&
-               (LogicalBlocks[i].age < min))
-           {
-              min = LogicalBlocks[i].age;
-              index = i;
-           }
-       }    
+	int i, from, to;
+	from = 0;
+	to   = (IsEMSCached()) ? 8 : 4;   
+
+	for (i = from; i < to; i++)
+	{
+	    if (LogicalBlocks[i].PhysicalBlock == physicalblock)
+	    {
+                return LogicalBlocks[i].address;
+	    }
+	}
     }
- 
-    return index;
-}
 
-static void RedistributeAges(void)
-{
-    int i;
+#else
     
-    for (i = 0; i < 8; i++)
-        if (LogicalBlocks[i].present)
-           LogicalBlocks[i].age /= 2;
-
-    LogicalTime = UINT_MAX / 2;     
-}
-
-char* EnsureBlockMapped(unsigned long physicalblock)
-{
-    int i, oldblock;
+    if (LogicalBlocks[0].PhysicalBlock == physicalblock) return LogicalBlocks[0].address;
+    if (LogicalBlocks[1].PhysicalBlock == physicalblock) return LogicalBlocks[1].address;
+    if (LogicalBlocks[2].PhysicalBlock == physicalblock) return LogicalBlocks[2].address;	
+    if (LogicalBlocks[3].PhysicalBlock == physicalblock) return LogicalBlocks[3].address;   
     
-    /* First see wether the block is not already cached. */
-    for (i = 0; i < 8; i++)
-    {
-        if ((LogicalBlocks[i].present) &&
-            (LogicalBlocks[i].PhysicalBlock == physicalblock))
-        {
-           LogicalBlocks[i].age = LogicalTime++;
-           if (LogicalBlocks[i].age == UINT_MAX)
-              RedistributeAges();
-           return LogicalBlocks[i].address;
-        }
-    }
-    
+#endif
+       
     /* Not in conventional memory, swap the oldest logical block, with
        the wanted physical block. */ 
+#ifdef USE_EMS    
     switch (GetPhysicalMemType(physicalblock))
     {
         case XMS:
-             oldblock = GetOldestLogicalBlock(XMS);
-             if (RemapXMSBlock(oldblock, physicalblock))
-             {
-                LogicalBlocks[oldblock].age     = 0;
-                LogicalBlocks[oldblock].PhysicalBlock = physicalblock; 
-                
-                return LogicalBlocks[oldblock].address;
+#endif	    
+	     if (RemapXMSBlock(NextBlockPointer, physicalblock))
+             { 
+                char* retVal;
+		 
+		LogicalBlocks[NextBlockPointer].PhysicalBlock = physicalblock; 
+		retVal = LogicalBlocks[NextBlockPointer].address;
+		 
+   		NextBlockPointer++;
+		 
+#ifndef USE_EMS	
+		if (NextBlockPointer == 4)  NextBlockPointer = 0;
+#else	    
+		NextBlockPointer %= (IsEMSCached()) ? 8 : 4;   
+#endif	     
+
+                return retVal;
              }
+	     	     
+#ifdef USE_EMS
              break;
                 
-        case EMS:
-             oldblock = GetOldestLogicalBlock(EMS);  
-             if (RemapEMSBlock(oldblock, physicalblock))
+
+	case EMS:
+             oldblock = GetOldestLogicalBlock(EMS); 
+	     assert((oldblock >= 4) && (oldblock < 8));
+             	
+             if (RemapEMSBlock(oldblock-4, physicalblock))
              {
-                LogicalBlocks[oldblock].age     = 0;
                 LogicalBlocks[oldblock].PhysicalBlock = physicalblock; 
 
                 return LogicalBlocks[oldblock].address;                             
              }      
              break;   
+
+	default:
+	     assert(FALSE);	 
     }
-     
+#endif	          
+    assert(FALSE);    
     return NULL;     
 }

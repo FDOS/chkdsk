@@ -19,16 +19,19 @@
    If you have any questions, comments, suggestions, or fixes please
    email me at:  imre.leber@worldonline.be
 */
+
+#include <assert.h>
 #include <stdlib.h>
 
-#include "..\..\misc\bool.h"
-#include "..\header\rdwrsect.h"
-#include "..\header\fat.h"
-#include "..\header\fatconst.h"
-#include "..\header\boot.h"
-#include "..\header\direct.h"
-#include "..\header\FTEMem.h"
-#include "..\header\fsinfo.h"
+#include "../../misc/bool.h"
+#include "../header/rdwrsect.h"
+#include "../header/fat.h"
+#include "../header/fatconst.h"
+#include "../header/boot.h"
+#include "../header/direct.h"
+#include "../header/ftemem.h"
+#include "../header/fsinfo.h"
+#include "../header/fteerr.h"
 
 /***********************************************************
 **                      ReadFSInfo
@@ -42,8 +45,10 @@ BOOL ReadFSInfo(RDWRHandle handle, struct FSInfoStruct* info)
 {
     unsigned short FSinfoStart;
     
+    assert(info);
+    
     FSinfoStart = GetFSInfoSector(handle);
-    if (!FSinfoStart) return FALSE;
+    if (!FSinfoStart)  RETURN_FTEERR(FALSE);
     
     return ReadSectors(handle, 1, FSinfoStart, info) != -1;
 }
@@ -60,8 +65,10 @@ BOOL WriteFSInfo(RDWRHandle handle, struct FSInfoStruct* info)
 {
     unsigned short FSinfoStart;
     
+    assert(info);
+    
     FSinfoStart = GetFSInfoSector(handle);
-    if (!FSinfoStart) return FALSE;
+    if (!FSinfoStart)  RETURN_FTEERR(FALSE);
     
     return WriteSectors(handle, 1, FSinfoStart, info, WR_UNKNOWN) != -1;
 }
@@ -78,14 +85,16 @@ BOOL CheckFSInfo(RDWRHandle handle, BOOL* isfaulty)
 {
     struct FSInfoStruct* info;
     
+    assert(isfaulty);
+    
     info = AllocateFSInfo();
-    if (!info) return FALSE;
+    if (!info)  RETURN_FTEERR(FALSE);
 
     if (ReadFSInfo(handle, info))
     {
-       *isfaulty = (info->LeadSignature == FSINFO_LEAD_SIGNATURE)   &&
-                   (info->StructSignature == FSINFO_STRUC_SIGNATURE) &&
-                   (info->TailSignature == FSINFO_TRAIL_SIGNATURE);
+       *isfaulty = (info->LeadSignature   != FSINFO_LEAD_SIGNATURE)  ||
+                   (info->StructSignature != FSINFO_STRUC_SIGNATURE) ||
+                   (info->TailSignature   != FSINFO_TRAIL_SIGNATURE);
                    
        FreeFSInfo(info);            
        return TRUE;
@@ -93,7 +102,7 @@ BOOL CheckFSInfo(RDWRHandle handle, BOOL* isfaulty)
     else
     {
        FreeFSInfo(info);
-       return FALSE;
+        RETURN_FTEERR(FALSE);
     }
 }
 /***********************************************************
@@ -108,7 +117,9 @@ BOOL CheckFSInfo(RDWRHandle handle, BOOL* isfaulty)
 BOOL GetFreeClusterSearchStart(RDWRHandle handle, CLUSTER* startfrom) 
 {
     int labelsize;
-    struct FSInfoStruct* info;
+    struct FSInfoStruct* info;   
+	
+    assert(startfrom);
     
     labelsize = GetFatLabelSize(handle);
     switch (labelsize)
@@ -119,26 +130,28 @@ BOOL GetFreeClusterSearchStart(RDWRHandle handle, CLUSTER* startfrom)
             return TRUE;   
                
        case FAT32:
-            info = AllocateFSInfo();
-            if (!info) return FALSE;               
+	    {
+		BOOL retVal = FALSE;
+		info = AllocateFSInfo();
+		if (!info)  RETURN_FTEERR(FALSE);
                            
-            if (ReadFSInfo(handle, info))
-            {
-               *startfrom = info->FreeSearchStart;
-               if (*startfrom == FSINFO_DONTKNOW)
-                  *startfrom = 2;
-          
-               FreeFSInfo(info); 
-               return TRUE;
-            } 
-            else
-            {
-               FreeFSInfo(info);        
-               return FALSE;
-            }
-       
+		if (ReadFSInfo(handle, info))
+		{
+		   *startfrom = info->FreeSearchStart;
+		   if ((*startfrom == FSINFO_DONTKNOW) ||
+		       (*startfrom == 0)) // DOSFSCK peculiarity
+		   {
+		      *startfrom = 2;
+		   }
+
+		   retVal = TRUE;
+		} 
+	    
+		FreeFSInfo(info);
+		return retVal;	    
+	    }
        default:
-            return FALSE;
+             RETURN_FTEERR(FALSE);
     }
 }
 
@@ -155,8 +168,10 @@ BOOL GetNumberOfFreeClusters(RDWRHandle handle, CLUSTER* freeclustercount)
     BOOL retVal = FALSE;
     struct FSInfoStruct* info;
 
+    assert(freeclustercount);
+    
     info = AllocateFSInfo();
-    if (!info) return FALSE;   
+    if (!info) RETURN_FTEERR(FALSE);
             
     if (ReadFSInfo(handle, info))
     {
@@ -178,6 +193,8 @@ BOOL GetNumberOfFreeClusters(RDWRHandle handle, CLUSTER* freeclustercount)
 
 void WriteFreeClusterStart(struct FSInfoStruct* info, CLUSTER startfrom)
 {
+    assert(info);
+    
     info->FreeSearchStart = startfrom;  
 }
 
@@ -191,5 +208,7 @@ void WriteFreeClusterStart(struct FSInfoStruct* info, CLUSTER startfrom)
 
 void WriteFreeClusterCount(struct FSInfoStruct* info, CLUSTER count)
 {
+    assert(info);
+    
     info->FreeClusterCount = count;   
 }
